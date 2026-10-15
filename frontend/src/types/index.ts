@@ -186,3 +186,18 @@ export interface ExplanationResponse {
   contradictions: ConflictItem[];
   subgraph: GraphData;
 }
+
+export interface RunBudget {
+  run_id: string;
+  status: 'within_budget' | 'exceeded';
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd: number;
+  max_budget_usd: number;
+  step_count: number;
+  max_steps: number;
+  elapsed_seconds: number;
+  max_duration_seconds: number;
+  agent_step_breakdown: Record<string, number>;
+}

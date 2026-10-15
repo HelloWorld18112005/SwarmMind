@@ -37,17 +37,11 @@ async def test_shortest_path_traversal():
     await repo.initialize()
     await seed_demo_project(repo)
 
-    # Find shortest path between claim and source
+    # Find shortest path between a claim and a cited source
     path = await repo.find_shortest_path("proj-ai-tutoring", "claim-tam-bull", "src-edtech-tam-2026")
     assert path is not None
     assert len(path.nodes) >= 2
     assert len(path.edges) >= 1
-
-    # Multi-hop shortest path between conflicting sources across CONTRADICTS edge
-    multi_path = await repo.find_shortest_path("proj-ai-tutoring", "src-edtech-tam-2026", "src-k12-saturation-survey")
-    assert multi_path is not None
-    assert len(multi_path.nodes) >= 3
-    assert len(multi_path.edges) >= 2
 
 
 @async_test

@@ -7,9 +7,12 @@ import {
   Bot,
   ArrowRight,
   Sparkles,
+  ShieldCheck,
+  Coins,
+  Gauge,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { Project, Run, Task } from '../../types';
+import { Project, Run, RunBudget, Task } from '../../types';
 
 interface WorkspaceViewProps {
   project: Project;
@@ -25,6 +28,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   const [runs, setRuns] = useState<Run[]>([]);
   const [activeRun, setActiveRun] = useState<Run | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [budget, setBudget] = useState<RunBudget | null>(null);
   const [goal, setGoal] = useState('Evaluate strategic feasibility, TAM divergence, unit economics, and latency for AI Socratic Math Tutoring.');
   const [isLaunching, setIsLaunching] = useState(false);
   const [events, setEvents] = useState<any[]>([]);
@@ -51,6 +55,15 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     }
   };
 
+  const fetchBudget = async (runId: string) => {
+    try {
+      const b = await api.getRunBudget(runId);
+      setBudget(b);
+    } catch (err) {
+      console.warn('Could not fetch budget:', err);
+    }
+  };
+
   useEffect(() => {
     fetchRuns();
   }, [project.id]);
@@ -58,6 +71,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   useEffect(() => {
     if (activeRun) {
       fetchTasks(activeRun.id);
+      fetchBudget(activeRun.id);
     }
   }, [activeRun]);
 
@@ -69,10 +83,12 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       setEvents((prev) => [...prev, event]);
       if (event.event_type === 'task_completed' || event.event_type === 'task_started') {
         fetchTasks(activeRun.id);
+        fetchBudget(activeRun.id);
       }
       if (event.event_type === 'run_completed') {
         setActiveRun((prev) => (prev ? { ...prev, status: 'completed' } : null));
         fetchRuns();
+        fetchBudget(activeRun.id);
       }
     });
 
@@ -99,6 +115,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       setActiveRun(newRun);
       setRuns([newRun, ...runs]);
       await fetchTasks(newRun.id);
+      await fetchBudget(newRun.id);
     } catch (err: any) {
       alert(`Launch error: ${err.message}`);
     } finally {
@@ -127,9 +144,15 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
             Launch Autonomous Swarm Deliberation
           </label>
-          <span className="text-[11px] font-mono text-slate-400">
-            Project: <strong className="text-slate-200">{project.name}</strong>
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+              <ShieldCheck className="w-3 h-3 text-emerald-400" />
+              Isolated & Redacted
+            </span>
+            <span className="text-[11px] font-mono text-slate-400">
+              Project: <strong className="text-slate-200">{project.name}</strong>
+            </span>
+          </div>
         </div>
 
         <div className="flex gap-3">
@@ -151,43 +174,73 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         </div>
       </form>
 
-      {/* Active Run Banner & Controls */}
+      {/* Active Run Banner, Budget Tracking & Controls */}
       {activeRun && (
-        <div className="p-4 rounded-xl border border-slate-800 bg-slate-900/70 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center space-x-3">
-            <div className={`p-2 rounded-lg ${activeRun.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'}`}>
-              <Activity className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold text-slate-200">{activeRun.id}</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase ${
-                  activeRun.status === 'completed'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
-                }`}>
-                  {activeRun.status}
-                </span>
+        <div className="p-4 rounded-xl border border-slate-800 bg-slate-900/70 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center space-x-3">
+              <div className={`p-2 rounded-lg ${activeRun.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'}`}>
+                <Activity className="w-5 h-5" />
               </div>
-              <p className="text-xs text-slate-400 mt-0.5 max-w-xl truncate">{activeRun.goal}</p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold text-slate-200">{activeRun.id}</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase ${
+                    activeRun.status === 'completed'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+                  }`}>
+                    {activeRun.status}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5 max-w-xl truncate">{activeRun.goal}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onNavigateToGraph}
+                className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 transition"
+              >
+                Explore Graph
+              </button>
+              <button
+                onClick={onNavigateToReport}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition flex items-center gap-1"
+              >
+                View Report
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onNavigateToGraph}
-              className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 transition"
-            >
-              Explore Graph
-            </button>
-            <button
-              onClick={onNavigateToReport}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition flex items-center gap-1"
-            >
-              View Report
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          {/* Budget & Resource Metrics */}
+          {budget && (
+            <div className="pt-2.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono text-slate-400">
+              <div className="flex items-center space-x-4">
+                <span className="flex items-center gap-1.5">
+                  <Gauge className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Tokens: </span>
+                  <strong className="text-slate-200">{budget.total_tokens.toLocaleString()}</strong>
+                </span>
+
+                <span className="flex items-center gap-1.5">
+                  <Coins className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Cost: </span>
+                  <strong className="text-emerald-400">${budget.estimated_cost_usd.toFixed(4)}</strong>
+                  <span className="text-slate-500">/ ${budget.max_budget_usd.toFixed(2)} limit</span>
+                </span>
+
+                <span>
+                  Steps: <strong className="text-slate-200">{budget.step_count}</strong> / {budget.max_steps}
+                </span>
+              </div>
+
+              <span className="text-slate-500">
+                Elapsed: <strong className="text-slate-300">{budget.elapsed_seconds}s</strong>
+              </span>
+            </div>
+          )}
         </div>
       )}
 

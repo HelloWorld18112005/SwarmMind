@@ -10,6 +10,7 @@ from app.memory.retrieval import GraphRetrieval
 from app.schemas.memory import Memory, MemoryCreate, MemoryUpdate
 from app.schemas.claim import Claim, ClaimCreate, Source
 from app.schemas.graph import GraphData
+from app.security.redaction import redact_sensitive_data
 
 
 class MemoryService:
@@ -40,6 +41,7 @@ class MemoryService:
                     if m.content == match:
                         return m, False
 
+        clean_content = redact_sensitive_data(payload.content)
         mem_id = f"mem-{uuid.uuid4().hex[:8]}"
         memory = Memory(
             id=mem_id,
@@ -48,7 +50,7 @@ class MemoryService:
             agent_id=payload.agent_id,
             agent_role=payload.agent_role,
             task_id=payload.task_id,
-            content=payload.content,
+            content=clean_content,
             memory_type=payload.memory_type,
             confidence=payload.confidence,
             tags=payload.tags,
@@ -82,6 +84,7 @@ class MemoryService:
         payload: ClaimCreate,
         run_id: str | None = None,
     ) -> Claim:
+        clean_text = redact_sensitive_data(payload.text)
         claim_id = f"claim-{uuid.uuid4().hex[:8]}"
         claim = Claim(
             id=claim_id,
@@ -89,7 +92,7 @@ class MemoryService:
             run_id=run_id,
             agent_id=payload.agent_id,
             agent_role=payload.agent_role,
-            text=payload.text,
+            text=clean_text,
             confidence=payload.confidence,
             status="proposed",
             supporting_source_ids=payload.source_ids,
