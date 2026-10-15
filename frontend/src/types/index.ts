@@ -128,8 +128,12 @@ export interface ConflictItem {
   claim_a_text: string;
   claim_b_id: string;
   claim_b_text: string;
-  status: string;
-  notes: string;
+  status?: string;
+  notes?: string;
+  dispute_reason?: string;
+  recommendation?: string;
+  claim_a_sources?: Array<{ title: string; uri: string }>;
+  claim_b_sources?: Array<{ title: string; uri: string }>;
 }
 
 export interface Report {
@@ -161,4 +165,24 @@ export interface HealthResponse {
     host?: string;
     error?: string;
   };
+}
+
+export interface ExplainabilityStep {
+  step_number: number;
+  agent_role: string;
+  action: string;
+  finding: string;
+  confidence: number;
+  source_citation?: string;
+}
+
+export interface ExplanationResponse {
+  target_id: string;
+  target_title: string;
+  confidence_assessment: string;
+  narrative_explanation: string;
+  steps: ExplainabilityStep[];
+  sources: Array<{ id: string; title: string; uri: string }>;
+  contradictions: ConflictItem[];
+  subgraph: GraphData;
 }

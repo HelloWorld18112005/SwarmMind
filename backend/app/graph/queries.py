@@ -92,3 +92,24 @@ RETURN c1.id AS claim_a_id, c1.text AS claim_a_text,
        c2.id AS claim_b_id, c2.text AS claim_b_text,
        r.notes AS notes
 """
+
+MULTI_HOP_PROVENANCE_CYPHER = """
+MATCH path = (start {id: $node_id})-[*1..4]-(connected)
+WHERE any(lbl IN labels(connected) WHERE lbl IN ['Claim', 'Source', 'Memory', 'Task', 'Agent'])
+RETURN path LIMIT $limit
+"""
+
+SHORTEST_PATH_CYPHER = """
+MATCH (start {id: $start_id}), (endNode {id: $end_id})
+MATCH path = shortestPath((start)-[*..8]-(endNode))
+RETURN path
+"""
+
+DISPUTES_WITH_EVIDENCE_CYPHER = """
+MATCH (c1:Claim {project_id: $project_id})-[r:CONTRADICTS]-(c2:Claim {project_id: $project_id})
+OPTIONAL MATCH (c1)-[:SUPPORTED_BY|CITES]->(s1:Source)
+OPTIONAL MATCH (c2)-[:SUPPORTED_BY|CITES]->(s2:Source)
+RETURN c1.id AS claim_a_id, c1.text AS claim_a_text, s1.title AS source_a_title, s1.uri AS source_a_uri,
+       c2.id AS claim_b_id, c2.text AS claim_b_text, s2.title AS source_b_title, s2.uri AS source_b_uri,
+       r.notes AS dispute_reason, r.recommendation AS recommendation
+"""

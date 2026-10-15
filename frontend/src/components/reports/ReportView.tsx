@@ -5,9 +5,11 @@ import {
   CheckCircle2,
   ShieldAlert,
   TrendingUp,
+  Sparkles,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Report, Run } from '../../types';
+import { ProvenancePathModal } from '../explain/ProvenancePathModal';
 
 interface ReportViewProps {
   projectId: string;
@@ -20,6 +22,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ projectId, activeRunId }
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [explainTarget, setExplainTarget] = useState<string | null>(null);
 
   // Fetch runs for project
   useEffect(() => {
@@ -68,6 +71,15 @@ export const ReportView: React.FC<ReportViewProps> = ({ projectId, activeRunId }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
+      {/* Provenance Explainability Modal */}
+      {explainTarget && selectedRunId && (
+        <ProvenancePathModal
+          runId={selectedRunId}
+          recommendationTitle={explainTarget}
+          onClose={() => setExplainTarget(null)}
+        />
+      )}
+
       {/* Top Header & Actions */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
@@ -126,9 +138,13 @@ export const ReportView: React.FC<ReportViewProps> = ({ projectId, activeRunId }
               <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
                 Decision Recommendation
               </span>
-              <span className="text-xs font-mono text-slate-400">
-                Generated {new Date(report.created_at).toLocaleDateString()}
-              </span>
+              <button
+                onClick={() => setExplainTarget(report.title)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/40 border border-indigo-500/40 text-indigo-300 text-xs font-mono transition"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Trace Provenance</span>
+              </button>
             </div>
 
             <h1 className="text-2xl font-bold text-white tracking-tight leading-snug">
@@ -181,9 +197,17 @@ export const ReportView: React.FC<ReportViewProps> = ({ projectId, activeRunId }
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-900 text-xs text-slate-300">
-                      <span className="font-semibold text-rose-300">Dispute Rationale: </span>
-                      {conflict.notes}
+                    <div className="pt-2 border-t border-slate-900 text-xs text-slate-300 flex items-center justify-between">
+                      <div>
+                        <span className="font-semibold text-rose-300">Dispute Rationale: </span>
+                        {conflict.notes || conflict.dispute_reason}
+                      </div>
+                      <button
+                        onClick={() => setExplainTarget(conflict.claim_a_text)}
+                        className="text-indigo-400 hover:text-indigo-300 font-mono text-[11px] underline ml-3 shrink-0"
+                      >
+                        Explain Dispute
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -202,12 +226,21 @@ export const ReportView: React.FC<ReportViewProps> = ({ projectId, activeRunId }
               {report.findings.map((finding, idx) => (
                 <div
                   key={idx}
-                  className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 flex items-start gap-3 text-xs"
+                  className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 flex items-start justify-between gap-3 text-xs group"
                 >
-                  <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-mono text-[10px] shrink-0 mt-0.5">
-                    {idx + 1}
-                  </span>
-                  <p className="text-slate-200 leading-relaxed font-sans">{finding}</p>
+                  <div className="flex items-start gap-3 flex-1">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-mono text-[10px] shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <p className="text-slate-200 leading-relaxed font-sans">{finding}</p>
+                  </div>
+
+                  <button
+                    onClick={() => setExplainTarget(finding)}
+                    className="opacity-0 group-hover:opacity-100 transition px-2 py-1 rounded bg-slate-900 border border-slate-800 text-indigo-400 hover:text-indigo-300 font-mono text-[10px] shrink-0"
+                  >
+                    Trace
+                  </button>
                 </div>
               ))}
             </div>
@@ -237,16 +270,21 @@ export const ReportView: React.FC<ReportViewProps> = ({ projectId, activeRunId }
                       <p className="text-xs text-slate-300 leading-relaxed">{rec.description}</p>
                     </div>
 
-                    {rec.risks && rec.risks.length > 0 && (
-                      <div className="pt-2 border-t border-slate-900 space-y-1">
-                        <span className="text-[10px] font-mono text-slate-500 uppercase">Risks & Caveats</span>
-                        <ul className="list-disc list-inside text-[11px] text-slate-400 space-y-0.5">
-                          {rec.risks.map((risk, rIdx) => (
-                            <li key={rIdx}>{risk}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    <div className="pt-2 border-t border-slate-900 flex items-center justify-between">
+                      {rec.risks && rec.risks.length > 0 ? (
+                        <span className="text-[10px] font-mono text-slate-500 uppercase">
+                          {rec.risks.length} Risks Identified
+                        </span>
+                      ) : <span />}
+
+                      <button
+                        onClick={() => setExplainTarget(rec.title)}
+                        className="inline-flex items-center gap-1 text-[11px] font-mono text-indigo-400 hover:text-indigo-300 font-medium"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        <span>Trace Provenance</span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -32,7 +32,7 @@ class MockProvider(LLMProvider):
                 role = "synthesizer"
             elif "planner" in target or "roadmap" in target:
                 role = "planner"
-            elif "critic" in target or "contradiction" in target:
+            elif "critic" in target:
                 role = "critic"
             elif "analyst" in target:
                 role = "analyst"
@@ -41,7 +41,7 @@ class MockProvider(LLMProvider):
             else:
                 role = "synthesizer"
 
-        # 1. Synthesizer
+        # 1. Synthesizer: final executive report
         if role == "synthesizer":
             payload = {
                 "title": "Strategic Feasibility Evaluation: Socratic AI Tutoring Platform",
@@ -185,7 +185,7 @@ class MockProvider(LLMProvider):
             }
             return LLMResponse(content=json.dumps(payload), prompt_tokens=190, completion_tokens=230)
 
-        # Default fallback: Synthesizer
+        # Default fallback
         payload = {
             "title": "Strategic Feasibility Evaluation: Socratic AI Tutoring Platform",
             "executive_summary": "Strong greenlight recommendation to launch direct-to-consumer AI tutoring, resolving market divergence through B2C positioning.",

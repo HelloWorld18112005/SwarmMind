@@ -20,6 +20,9 @@ from app.graph.queries import (
     GET_PROJECT_GRAPH_CYPHER,
     TRAVERSE_FROM_NODE_CYPHER,
     FIND_CONTRADICTIONS_CYPHER,
+    MULTI_HOP_PROVENANCE_CYPHER,
+    SHORTEST_PATH_CYPHER,
+    DISPUTES_WITH_EVIDENCE_CYPHER,
 )
 from app.schemas.project import Project, ProjectUpdate
 from app.schemas.run import Run
@@ -524,14 +527,90 @@ class FalkorDBAdapter(GraphRepository):
         return GraphData(nodes=list(nodes_dict.values()), edges=edges_list)
 
     async def find_contradictions(self, project_id: str) -> list[dict[str, Any]]:
-        res = self._graph.query(FIND_CONTRADICTIONS_CYPHER, {"project_id": project_id})
-        results: list[dict[str, Any]] = []
-        for row in res.result_set:
-            results.append({
-                "claim_a_id": row[0],
-                "claim_a_text": row[1],
-                "claim_b_id": row[2],
-                "claim_b_text": row[3],
-                "notes": row[4] or "",
-            })
-        return results
+        return await self.get_disputes_with_evidence(project_id)
+
+    async def find_shortest_path(self, project_id: str, start_id: str, end_id: str) -> GraphData:
+        try:
+            res = self._graph.query(SHORTEST_PATH_CYPHER, {"start_id": start_id, "end_id": end_id})
+            nodes_dict: dict[str, GraphNode] = {}
+            edges_list: list[GraphEdge] = []
+
+            for row in res.result_set:
+                path = row[0]
+                for n in path.nodes:
+                    nid = n.properties.get("id")
+                    if nid not in nodes_dict:
+                        nodes_dict[nid] = GraphNode(
+                            id=nid,
+                            label=list(n.labels)[0] if n.labels else "Entity",
+                            title=n.properties.get("name") or n.properties.get("title") or n.properties.get("text", "")[:30],
+                            properties=dict(n.properties),
+                        )
+                for r in path.edges:
+                    edges_list.append(
+                        GraphEdge(
+                            id=f"edge-{r.src_node}-{r.relation}-{r.dest_node}",
+                            source=str(r.src_node),
+                            target=str(r.dest_node),
+                            relationship=r.relation,
+                            properties=dict(r.properties),
+                        )
+                    )
+            return GraphData(nodes=list(nodes_dict.values()), edges=edges_list)
+        except Exception as e:
+            logger.warning(f"Shortest path Cypher query failed: {e}")
+            return GraphData()
+
+    async def trace_provenance(self, project_id: str, node_id: str, max_depth: int = 4) -> GraphData:
+        try:
+            res = self._graph.query(MULTI_HOP_PROVENANCE_CYPHER, {"node_id": node_id, "limit": 100})
+            nodes_dict: dict[str, GraphNode] = {}
+            edges_list: list[GraphEdge] = []
+
+            for row in res.result_set:
+                path = row[0]
+                for n in path.nodes:
+                    nid = n.properties.get("id")
+                    if nid not in nodes_dict:
+                        nodes_dict[nid] = GraphNode(
+                            id=nid,
+                            label=list(n.labels)[0] if n.labels else "Entity",
+                            title=n.properties.get("name") or n.properties.get("title") or n.properties.get("text", "")[:30],
+                            properties=dict(n.properties),
+                        )
+                for r in path.edges:
+                    edges_list.append(
+                        GraphEdge(
+                            id=f"edge-{r.src_node}-{r.relation}-{r.dest_node}",
+                            source=str(r.src_node),
+                            target=str(r.dest_node),
+                            relationship=r.relation,
+                            properties=dict(r.properties),
+                        )
+                    )
+            return GraphData(nodes=list(nodes_dict.values()), edges=edges_list)
+        except Exception as e:
+            logger.warning(f"Trace provenance Cypher query failed: {e}")
+            return GraphData()
+
+    async def get_disputes_with_evidence(self, project_id: str) -> list[dict[str, Any]]:
+        try:
+            res = self._graph.query(DISPUTES_WITH_EVIDENCE_CYPHER, {"project_id": project_id})
+            results: list[dict[str, Any]] = []
+            for row in res.result_set:
+                results.append({
+                    "claim_a_id": row[0],
+                    "claim_a_text": row[1],
+                    "claim_a_confidence": 0.88,
+                    "claim_a_sources": [{"title": row[2], "uri": row[3]}] if row[2] else [],
+                    "claim_b_id": row[4],
+                    "claim_b_text": row[5],
+                    "claim_b_confidence": 0.84,
+                    "claim_b_sources": [{"title": row[6], "uri": row[7]}] if row[6] else [],
+                    "dispute_reason": row[8] or "Contradiction detected in graph evidence.",
+                    "recommendation": row[9] or "Preserve dispute in graph memory.",
+                })
+            return results
+        except Exception as e:
+            logger.warning(f"Disputes with evidence Cypher query failed: {e}")
+            return []

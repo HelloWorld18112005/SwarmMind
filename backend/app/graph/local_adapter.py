@@ -1,5 +1,6 @@
-import asyncio
 from datetime import datetime
+import asyncio
+from collections import deque
 from typing import Any
 import uuid
 
@@ -13,8 +14,9 @@ from app.schemas.graph import GraphData, GraphNode, GraphEdge
 
 
 class LocalGraphAdapter(GraphRepository):
+    """In-memory GraphRepository simulating Cypher traversal and relationships for offline testing."""
+
     def __init__(self) -> None:
-        self._lock = asyncio.Lock()
         self._projects: dict[str, Project] = {}
         self._runs: dict[str, Run] = {}
         self._tasks: dict[str, Task] = {}
@@ -23,15 +25,14 @@ class LocalGraphAdapter(GraphRepository):
         self._sources: dict[str, Source] = {}
         self._nodes: dict[str, GraphNode] = {}
         self._edges: list[GraphEdge] = []
+        self._lock = asyncio.Lock()
         self._is_initialized = False
 
     async def initialize(self) -> None:
-        async with self._lock:
-            self._is_initialized = True
+        self._is_initialized = True
 
     async def close(self) -> None:
-        async with self._lock:
-            self._is_initialized = False
+        self._is_initialized = False
 
     async def check_health(self) -> dict[str, Any]:
         return {
@@ -50,7 +51,7 @@ class LocalGraphAdapter(GraphRepository):
                 id=project.id,
                 label="Project",
                 title=project.name,
-                properties={"description": project.description, "created_at": project.created_at.isoformat()},
+                properties={"name": project.name, "description": project.description, "project_id": project.id},
             )
             return project
 
@@ -64,18 +65,19 @@ class LocalGraphAdapter(GraphRepository):
 
     async def update_project(self, project_id: str, updates: ProjectUpdate) -> Project | None:
         async with self._lock:
-            project = self._projects.get(project_id)
-            if not project:
+            proj = self._projects.get(project_id)
+            if not proj:
                 return None
             if updates.name is not None:
-                project.name = updates.name
+                proj.name = updates.name
             if updates.description is not None:
-                project.description = updates.description
-            project.updated_at = datetime.utcnow()
-            if project.id in self._nodes:
-                self._nodes[project.id].title = project.name
-                self._nodes[project.id].properties["description"] = project.description
-            return project
+                proj.description = updates.description
+            proj.updated_at = datetime.utcnow()
+            if project_id in self._nodes:
+                self._nodes[project_id].title = proj.name
+                self._nodes[project_id].properties["name"] = proj.name
+                self._nodes[project_id].properties["description"] = proj.description
+            return proj
 
     async def delete_project(self, project_id: str) -> bool:
         async with self._lock:
@@ -92,19 +94,17 @@ class LocalGraphAdapter(GraphRepository):
             self._nodes[run.id] = GraphNode(
                 id=run.id,
                 label="Run",
-                title=f"Run: {run.goal[:30]}...",
-                properties={"status": run.status, "goal": run.goal, "project_id": run.project_id},
+                title=run.goal[:35] + ("..." if len(run.goal) > 35 else ""),
+                properties={"goal": run.goal, "status": run.status, "project_id": run.project_id},
             )
-            if run.project_id in self._projects:
-                edge_id = f"edge-{run.project_id}-has_run-{run.id}"
-                self._edges.append(
-                    GraphEdge(
-                        id=edge_id,
-                        source=run.project_id,
-                        target=run.id,
-                        relationship="HAS_RUN",
-                    )
+            self._edges.append(
+                GraphEdge(
+                    id=f"edge-{run.project_id}-has_run-{run.id}",
+                    source=run.project_id,
+                    target=run.id,
+                    relationship="HAS_RUN",
                 )
+            )
             return run
 
     async def get_run(self, run_id: str) -> Run | None:
@@ -113,7 +113,8 @@ class LocalGraphAdapter(GraphRepository):
 
     async def list_runs(self, project_id: str) -> list[Run]:
         async with self._lock:
-            return [r for r in self._runs.values() if r.project_id == project_id]
+            runs = [r for r in self._runs.values() if r.project_id == project_id]
+            return sorted(runs, key=lambda r: r.started_at, reverse=True)
 
     async def update_run_status(self, run_id: str, status: str, completed_at: datetime | None = None) -> Run | None:
         async with self._lock:
@@ -135,9 +136,9 @@ class LocalGraphAdapter(GraphRepository):
                 label="Task",
                 title=task.title,
                 properties={
+                    "assigned_role": task.assigned_role,
                     "status": task.status,
                     "priority": task.priority,
-                    "assigned_role": task.assigned_role,
                     "run_id": task.run_id,
                 },
             )
@@ -166,9 +167,16 @@ class LocalGraphAdapter(GraphRepository):
 
     async def list_tasks(self, run_id: str) -> list[Task]:
         async with self._lock:
-            return [t for t in self._tasks.values() if t.run_id == run_id]
+            tasks = [t for t in self._tasks.values() if t.run_id == run_id]
+            return sorted(tasks, key=lambda t: t.created_at)
 
-    async def update_task_status(self, task_id: str, status: str, result: dict[str, Any] | None = None, error: str | None = None) -> Task | None:
+    async def update_task_status(
+        self,
+        task_id: str,
+        status: str,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> Task | None:
         async with self._lock:
             task = self._tasks.get(task_id)
             if not task:
@@ -180,7 +188,7 @@ class LocalGraphAdapter(GraphRepository):
                 task.error = error
             if status == "running" and not task.started_at:
                 task.started_at = datetime.utcnow()
-            elif status in ("completed", "failed", "cancelled") and not task.completed_at:
+            elif status in ("completed", "failed", "cancelled"):
                 task.completed_at = datetime.utcnow()
             if task_id in self._nodes:
                 self._nodes[task_id].properties["status"] = status
@@ -270,24 +278,16 @@ class LocalGraphAdapter(GraphRepository):
                     "confidence": claim.confidence,
                     "status": claim.status,
                     "project_id": claim.project_id,
+                    "agent_role": claim.agent_role,
                 },
             )
             for src_id in claim.supporting_source_ids:
                 self._edges.append(
                     GraphEdge(
-                        id=f"edge-{src_id}-supports-{claim.id}",
-                        source=src_id,
-                        target=claim.id,
-                        relationship="SUPPORTS",
-                    )
-                )
-            for contra_id in claim.contradicting_claim_ids:
-                self._edges.append(
-                    GraphEdge(
-                        id=f"edge-{claim.id}-contradicts-{contra_id}",
+                        id=f"edge-{claim.id}-cites-{src_id}",
                         source=claim.id,
-                        target=contra_id,
-                        relationship="CONTRADICTS",
+                        target=src_id,
+                        relationship="CITES",
                     )
                 )
             return claim
@@ -298,21 +298,21 @@ class LocalGraphAdapter(GraphRepository):
 
     async def list_claims(self, project_id: str, run_id: str | None = None) -> list[Claim]:
         async with self._lock:
-            claims = [c for c in self._claims.values() if c.project_id == project_id]
+            results = [c for c in self._claims.values() if c.project_id == project_id]
             if run_id:
-                claims = [c for c in claims if c.run_id == run_id]
-            return claims
+                results = [c for c in results if c.run_id == run_id]
+            return sorted(results, key=lambda c: c.created_at, reverse=True)
 
     async def record_contradiction(self, claim_a_id: str, claim_b_id: str, notes: str = "") -> None:
         async with self._lock:
-            edge_id = f"contra-{claim_a_id}-{claim_b_id}"
+            edge_id = f"edge-{claim_a_id}-contradicts-{claim_b_id}"
             self._edges.append(
                 GraphEdge(
                     id=edge_id,
                     source=claim_a_id,
                     target=claim_b_id,
                     relationship="CONTRADICTS",
-                    properties={"notes": notes, "detected_at": datetime.utcnow().isoformat()},
+                    properties={"notes": notes},
                 )
             )
             if claim_a_id in self._claims:
@@ -361,6 +361,9 @@ class LocalGraphAdapter(GraphRepository):
             return GraphData(nodes=project_nodes[:limit], edges=relevant_edges[:limit])
 
     async def traverse_graph(self, project_id: str, node_id: str, depth: int = 2) -> GraphData:
+        return await self.trace_provenance(project_id, node_id, max_depth=depth)
+
+    async def trace_provenance(self, project_id: str, node_id: str, max_depth: int = 4) -> GraphData:
         async with self._lock:
             if node_id not in self._nodes:
                 return GraphData()
@@ -369,7 +372,7 @@ class LocalGraphAdapter(GraphRepository):
             frontier = {node_id}
             traversed_edges: list[GraphEdge] = []
 
-            for _ in range(depth):
+            for _ in range(max_depth):
                 next_frontier = set()
                 for edge in self._edges:
                     if edge.source in frontier and edge.target not in visited_node_ids:
@@ -381,23 +384,73 @@ class LocalGraphAdapter(GraphRepository):
                         visited_node_ids.add(edge.source)
                         next_frontier.add(edge.source)
                 frontier = next_frontier
+                if not frontier:
+                    break
 
             nodes = [self._nodes[nid] for nid in visited_node_ids if nid in self._nodes]
             return GraphData(nodes=nodes, edges=traversed_edges)
 
+    async def find_shortest_path(self, project_id: str, start_id: str, end_id: str) -> GraphData:
+        async with self._lock:
+            if start_id not in self._nodes or end_id not in self._nodes:
+                return GraphData()
+
+            if start_id == end_id:
+                return GraphData(nodes=[self._nodes[start_id]], edges=[])
+
+            # BFS finding shortest path
+            queue: deque[tuple[str, list[GraphEdge]]] = deque([(start_id, [])])
+            visited = {start_id}
+
+            while queue:
+                curr_node_id, path_edges = queue.popleft()
+                if curr_node_id == end_id:
+                    path_nodes_set = {start_id, end_id}
+                    for edge in path_edges:
+                        path_nodes_set.add(edge.source)
+                        path_nodes_set.add(edge.target)
+                    nodes = [self._nodes[nid] for nid in path_nodes_set if nid in self._nodes]
+                    return GraphData(nodes=nodes, edges=path_edges)
+
+                # Find all neighbors
+                for edge in self._edges:
+                    neighbor_id = None
+                    if edge.source == curr_node_id and edge.target not in visited:
+                        neighbor_id = edge.target
+                    elif edge.target == curr_node_id and edge.source not in visited:
+                        neighbor_id = edge.source
+
+                    if neighbor_id:
+                        visited.add(neighbor_id)
+                        queue.append((neighbor_id, path_edges + [edge]))
+
+            return GraphData()
+
     async def find_contradictions(self, project_id: str) -> list[dict[str, Any]]:
+        return await self.get_disputes_with_evidence(project_id)
+
+    async def get_disputes_with_evidence(self, project_id: str) -> list[dict[str, Any]]:
         async with self._lock:
             results: list[dict[str, Any]] = []
             for edge in self._edges:
                 if edge.relationship == "CONTRADICTS":
                     claim_a = self._claims.get(edge.source)
                     claim_b = self._claims.get(edge.target)
-                    if claim_a and claim_b and (claim_a.project_id == project_id or claim_b.project_id == project_id):
+                    if claim_a and claim_b:
+                        sources_a = [self._sources[sid] for sid in claim_a.supporting_source_ids if sid in self._sources]
+                        sources_b = [self._sources[sid] for sid in claim_b.supporting_source_ids if sid in self._sources]
+
                         results.append({
                             "claim_a_id": claim_a.id,
                             "claim_a_text": claim_a.text,
+                            "claim_a_confidence": claim_a.confidence,
+                            "claim_a_sources": [{"title": s.title, "uri": s.uri} for s in sources_a],
                             "claim_b_id": claim_b.id,
                             "claim_b_text": claim_b.text,
-                            "notes": edge.properties.get("notes", ""),
+                            "claim_b_confidence": claim_b.confidence,
+                            "claim_b_sources": [{"title": s.title, "uri": s.uri} for s in sources_b],
+                            "notes": edge.properties.get("notes", "Evidence conflict detected by Critic."),
+                            "dispute_reason": edge.properties.get("notes", "Evidence conflict detected by Critic."),
+                            "recommendation": edge.properties.get("recommendation", "Preserve dispute in graph memory."),
                         })
             return results
