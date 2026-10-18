@@ -64,6 +64,14 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router, prefix="/api")
 
+    # Mount FastMCP Tool Registry over Server-Sent Events (SSE)
+    try:
+        from app.mcp_server import mcp
+        app.mount("/mcp", mcp.sse_app())
+        logger.info("FastMCP server mounted at /mcp")
+    except Exception as mcp_err:
+        logger.warning(f"Could not mount FastMCP server: {mcp_err}")
+
     @app.get("/", summary="Root Status")
     async def root() -> dict[str, str]:
         return {

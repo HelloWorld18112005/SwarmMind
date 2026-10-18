@@ -20,6 +20,7 @@ class GraphEdge(BaseModel):
 class GraphData(BaseModel):
     nodes: list[GraphNode] = Field(default_factory=list)
     edges: list[GraphEdge] = Field(default_factory=list)
+    explainable_path: list[str] = Field(default_factory=list, description="Ordered sequence of entity titles along the shortest reasoning path")
 
 
 class GraphPath(BaseModel):

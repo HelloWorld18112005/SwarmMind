@@ -103,12 +103,11 @@ class OrchestrationEngine:
                 ready_tasks = self.scheduler.get_ready_tasks(tasks)
                 if not ready_tasks:
                     # Wait for running tasks to finish or check deadlocks
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.2)
                     continue
 
-                for task in ready_tasks:
-                    # Execute ready task
-                    await self._execute_task(task, run, budget)
+                # Execute ready tasks concurrently via asyncio.gather (High-Concurrency Read/Write)
+                await asyncio.gather(*(self._execute_task(task, run, budget) for task in ready_tasks))
 
             # 4. Finalize Run
             await self.repo.update_run_status(run_id, "completed", completed_at=datetime.utcnow())
@@ -174,6 +173,18 @@ class OrchestrationEngine:
 
             result_dict = output.model_dump()
             await self.repo.update_task_status(task_id, "completed", result=result_dict)
+
+            # Record explicit HANDED_OFF_TO graph edges to downstream dependent tasks
+            all_run_tasks = await self.repo.list_tasks(run.id)
+            for downstream in all_run_tasks:
+                if task_id in downstream.dependencies:
+                    await self.repo.record_task_handoff(
+                        from_task_id=task_id,
+                        to_task_id=downstream.id,
+                        from_agent=role,
+                        to_agent=downstream.assigned_role,
+                    )
+
             await self.event_bus.publish(
                 ExecutionEvent(
                     event_type="task_completed",
@@ -187,6 +198,8 @@ class OrchestrationEngine:
         except Exception as err:
             logger.error(f"Task '{task_id}' failed: {err}")
             await self.repo.update_task_status(task_id, "failed", error=str(err))
+            # Record episodic failure in project memory
+            await self.memory_service.record_episode(run.id, task_id, "failed")
             await self.event_bus.publish(
                 ExecutionEvent(
                     event_type="task_failed",

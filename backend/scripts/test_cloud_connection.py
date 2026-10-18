@@ -1,127 +1,125 @@
-#!/usr/bin/env python3
 """
-FalkorDB Cloud Connectivity & Diagnostics Utility for SwarmMind.
+test_cloud_connection.py
+------------------------
+Verifies that the FalkorDB instance (local Docker or cloud) is reachable
+and that the SwarmMind graph schema can be initialized.
 
-Validates FalkorDB Cloud credentials, network reachability, TLS/SSL handshake,
-Cypher query execution, latency, and graph index readiness.
+Usage:
+    python backend/scripts/test_cloud_connection.py
+
+Reads credentials from backend/.env (via pydantic-settings).
 """
 
-import os
+import asyncio
 import sys
-import time
 from pathlib import Path
-from dotenv import load_dotenv
 
-# Ensure backend root is on sys.path
-backend_dir = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(backend_dir))
+# Allow running from the repo root
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Load backend/.env
-env_path = backend_dir / ".env"
-load_dotenv(dotenv_path=env_path)
-
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except Exception:
-        pass
+from app.config import get_settings
+from app.graph.factory import create_graph_repository
 
 
-def test_falkordb_cloud():
+async def main() -> None:
+    settings = get_settings()
     print("=" * 60)
-    print("      SWARMMIND - FALKORDB CLOUD CONNECTIVITY DIAGNOSTIC")
+    print("  SwarmMind — FalkorDB Connection Diagnostic")
     print("=" * 60)
+    print(f"  Backend:   {settings.graph_backend}")
+    print(f"  Host:      {settings.falkordb_host or '(none)'}")
+    print(f"  Port:      {settings.falkordb_port}")
+    print(f"  SSL:       {settings.falkordb_ssl}")
+    print(f"  Graph:     {settings.falkordb_graph}")
+    print("-" * 60)
 
-    host = os.getenv("FALKORDB_HOST", "").strip()
-    port = int(os.getenv("FALKORDB_PORT", "6379"))
-    username = os.getenv("FALKORDB_USERNAME", "").strip()
-    password = os.getenv("FALKORDB_PASSWORD", "").strip()
-    ssl = os.getenv("FALKORDB_SSL", "true").lower() in ("true", "1", "yes")
-    graph_name = os.getenv("FALKORDB_GRAPH", "swarmmind").strip()
-
-    print(f"\n[1/5] Checking Configuration:")
-    print(f"  • FALKORDB_HOST:     {host if host else '<NOT SET (Local Mode)>'}")
-    print(f"  • FALKORDB_PORT:     {port}")
-    print(f"  • FALKORDB_USERNAME: {username if username else '<none>'}")
-    print(f"  • FALKORDB_PASSWORD: {'*' * len(password) if password else '<none>'}")
-    print(f"  • FALKORDB_SSL:      {ssl}")
-    print(f"  • FALKORDB_GRAPH:    {graph_name}")
-
-    if not host:
-        print("\n" + "!" * 60)
-        print("NOTICE: No FalkorDB Cloud host is configured in backend/.env")
-        print("SwarmMind is currently operating in offline LocalGraphAdapter mode.")
-        print("!" * 60)
-        print("\nTo connect to FalkorDB Cloud:")
-        print("  1. Create a free database on FalkorDB Cloud (https://app.falkordb.cloud)")
-        print("  2. Open backend/.env and update:")
-        print("       GRAPH_BACKEND=falkordb")
-        print("       FALKORDB_HOST=<your-instance-subdomain>.falkordb.cloud")
-        print("       FALKORDB_PORT=6379")
-        print("       FALKORDB_PASSWORD=<your-database-password>")
-        print("       FALKORDB_SSL=true")
-        print("       FALKORDB_GRAPH=swarmmind")
-        print("  3. Run this script again: python backend/scripts/test_cloud_connection.py\n")
-        return 0
-
-    print("\n[2/5] Verifying 'falkordb' Python Client...")
-    try:
-        from falkordb import FalkorDB
-        print("  ✓ 'falkordb' client is installed.")
-    except ImportError:
-        print("  ✗ 'falkordb' package not found! Run: pip install falkordb")
-        return 1
-
-    print("\n[3/5] Establishing TLS/SSL Connection to FalkorDB Cloud...")
-    start_time = time.time()
-    try:
-        db = FalkorDB(
-            host=host,
-            port=port,
-            username=username if username else None,
-            password=password if password else None,
-            ssl=ssl,
+    if settings.graph_backend != "falkordb":
+        print(
+            "⚠  GRAPH_BACKEND is set to 'local'.\n"
+            "   Set GRAPH_BACKEND=falkordb in backend/.env to test a real instance."
         )
-        graph = db.select_graph(graph_name)
-        connect_time = (time.time() - start_time) * 1000
-        print(f"  ✓ Connected successfully in {connect_time:.1f}ms")
-    except Exception as e:
-        print(f"  ✗ Connection failed: {e}")
-        print("\nTroubleshooting:")
-        print("  - Verify that your FalkorDB Cloud instance is active.")
-        print("  - Verify that your IP is allowed in FalkorDB Cloud network access rules.")
-        print("  - Double-check password and SSL configuration.")
-        return 1
+        return
 
-    print("\n[4/5] Testing Parameterized Cypher Query Execution & Latency...")
+    repo = create_graph_repository(settings)
+
+    print("🔌  Connecting …")
     try:
-        query_start = time.time()
-        res = graph.query("RETURN 1 AS ping, timestamp() AS server_time")
-        query_time = (time.time() - query_start) * 1000
-        print(f"  ✓ Cypher query returned: {res.result_set[0]}")
-        print(f"  ✓ Round-trip query latency: {query_time:.1f}ms")
+        await repo.initialize()
     except Exception as e:
-        print(f"  ✗ Cypher query failed: {e}")
-        return 1
+        print(f"❌  Connection FAILED: {e}")
+        print()
+        print("  If using local Docker, ensure the container is running:")
+        print("    docker run --rm -p 6379:6379 -p 3000:3000 falkordb/falkordb:latest")
+        sys.exit(1)
 
-    print("\n[5/5] Inspecting Graph Statistics...")
-    try:
-        node_res = graph.query("MATCH (n) RETURN count(n) AS node_count")
-        edge_res = graph.query("MATCH ()-[r]->() RETURN count(r) AS edge_count")
-        node_count = node_res.result_set[0][0] if node_res.result_set else 0
-        edge_count = edge_res.result_set[0][0] if edge_res.result_set else 0
-        print(f"  • Existing Graph Nodes:         {node_count}")
-        print(f"  • Existing Graph Relationships: {edge_count}")
-        print(f"  ✓ Graph '{graph_name}' is healthy and ready for multi-agent swarm operations.")
-    except Exception as e:
-        print(f"  ! Note on statistics: {e}")
+    health = await repo.check_health()
+    print(f"✅  Connected!  Status: {health}")
 
-    print("\n" + "=" * 60)
-    print("  ALL FALKORDB CLOUD CHECKS PASSED — READY FOR PRODUCTION!")
-    print("=" * 60 + "\n")
-    return 0
+    # Basic round-trip test
+    print()
+    print("🔁  Running basic CRUD round-trip …")
+
+    from app.schemas.project import Project
+    from datetime import datetime
+
+    test_proj = Project(
+        id="test-conn-probe",
+        name="Connection Probe",
+        description="Temporary project created by test_cloud_connection.py",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    await repo.create_project(test_proj)
+    fetched = await repo.get_project("test-conn-probe")
+    assert fetched is not None, "Project not found after creation"
+    assert fetched.name == "Connection Probe"
+    await repo.delete_project("test-conn-probe")
+    gone = await repo.get_project("test-conn-probe")
+    assert gone is None, "Project still exists after deletion"
+
+    print("✅  Create → Read → Delete round-trip: PASS")
+
+    # Graph traversal test
+    print("🕸️   Running basic Cypher traversal …")
+    from app.schemas.claim import Claim, Source
+    from app.schemas.project import Project as Proj
+
+    ping_proj = Project(
+        id="test-traversal-ping",
+        name="Traversal Ping",
+        description="Temporary traversal test project",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    await repo.create_project(ping_proj)
+
+    src = Source(id="test-src-ping", title="Test Source", uri="http://test.internal", source_type="test")
+    await repo.save_source(src)
+
+    claim = Claim(
+        id="test-claim-ping",
+        project_id="test-traversal-ping",
+        text="This is a test claim for graph traversal.",
+        confidence=0.99,
+        status="proposed",
+        created_at=datetime.utcnow(),
+    )
+    await repo.save_claim(claim)
+    await repo.record_relationship("test-src-ping", "test-claim-ping", "SUPPORTS")
+
+    graph_data = await repo.get_project_graph("test-traversal-ping", limit=20)
+    assert len(graph_data.nodes) > 0, "No nodes returned from graph query"
+    print(f"✅  Traversal returned {len(graph_data.nodes)} node(s) and {len(graph_data.edges)} edge(s): PASS")
+
+    # Cleanup
+    await repo.delete_project("test-traversal-ping")
+
+    await repo.close()
+    print()
+    print("=" * 60)
+    print("  ALL CHECKS PASSED — FalkorDB is ready for SwarmMind 🎉")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
-    exit_code = test_falkordb_cloud()
-    sys.exit(exit_code)
+    asyncio.run(main())

@@ -1,57 +1,49 @@
 [
   {
-    "id": "src-edtech-tam-2026",
-    "title": "Global EdTech & AI Tutoring Market Intelligence Report 2026",
-    "uri": "https://research.edtech-analytics.internal/reports/2026-market-size",
-    "source_type": "industry_report",
+    "id": "src_deck",
+    "title": "ApexAI Founder Pitch Deck & Management Representations",
+    "uri": "https://dealroom.ventureaudit.internal/apexai/deck-q3-2026.pdf",
+    "source_type": "pitch_deck",
     "metadata": {
-      "tam": "$5.2B",
-      "cagr": "38.4%",
-      "segment": "K-12 & Higher Ed Direct-to-Consumer",
-      "published": "January 2026"
+      "valuation": "$45M",
+      "founder_claims": "ApexAI Core Engine is 100% proprietary, zero external copyleft dependencies, 99.99% multi-region cloud uptime",
+      "disclosed": "September 2026"
     }
   },
   {
-    "id": "src-k12-saturation-survey",
-    "title": "K-12 Public School District Procurement & Budget Survey 2026",
-    "uri": "https://gov.ed-procurement.internal/surveys/2026-district-budgets",
-    "source_type": "survey",
+    "id": "src_git_bom",
+    "title": "Engineering SBOM & Git Repository Deep Audit",
+    "uri": "https://audit.ventureaudit.internal/reports/apexai-sbom-git-audit.json",
+    "source_type": "code_audit",
     "metadata": {
-      "addressable_ceiling": "$800M",
-      "procurement_cycle_months": "14",
-      "key_barrier": "State curriculum compliance certifications"
+      "license_risk": "High",
+      "critical_finding": "core/routing_engine dynamically links ffmpeg & libx264 under GPLv3, triggering viral copyleft contamination",
+      "remediation_estimate": "3-4 months refactor"
     }
   },
   {
-    "id": "src-inference-cost-benchmark",
-    "title": "Real-Time Socratic LLM Voice & Text Inference Economics",
-    "uri": "https://ai-infra.benchmarks.internal/cost-per-student-hour",
-    "source_type": "technical_benchmark",
+    "id": "src_legal",
+    "title": "Delaware Chancery Court Docket (Case #2026-0842-JTL)",
+    "uri": "https://courts.delaware.gov/chancery/dockets/2026-0842-jtl",
+    "source_type": "court_docket",
     "metadata": {
-      "cost_per_hour": "$0.042",
-      "target_gross_margin": "72%",
-      "max_voice_latency_ms": "380ms"
+      "action": "Preliminary Injunction",
+      "status": "Active / Undisclosed in Pitch Deck",
+      "allegation": "Competitor injunction regarding model weights trained on scraped enterprise data",
+      "escrow_risk": "Material withholding required"
     }
   },
   {
-    "id": "src-pedagogical-efficacy-study",
-    "title": "Cognitive Scaffolding Meta-Analysis on 1-on-1 AI Tutoring",
-    "uri": "https://cognition.edu.internal/papers/2025-ai-scaffolding-results",
-    "source_type": "academic_study",
+    "id": "src_infra",
+    "title": "Terraform State & AWS CloudWatch Telemetry Dump",
+    "uri": "https://infra-audit.ventureaudit.internal/aws/apexai-tfstate-dump.json",
+    "source_type": "infrastructure_audit",
     "metadata": {
-      "effect_size_sigma": "+0.62",
-      "retention_gain": "28%",
-      "condition": "Must enforce active student recall before providing answers"
-    }
-  },
-  {
-    "id": "src-hallucination-risk-brief",
-    "title": "Educational AI Compliance & Hallucination Guardrails Brief",
-    "uri": "https://ed-safety.standards.internal/guidelines/hallucination-risks",
-    "source_type": "safety_brief",
-    "metadata": {
-      "risk_area": "STEM formula accuracy and historical dates",
-      "requirement": "Dual-pass fact verification on mathematical steps"
+      "rds_topology": "Single-AZ",
+      "region": "us-east-1",
+      "read_replicas": 0,
+      "measured_availability": "99.12%",
+      "contradiction": "Invalidates the 99.99% multi-region uptime representation"
     }
   }
 ]

@@ -43,11 +43,14 @@ class EvaluationBenchmark:
         project_graph = await self.repo.get_project_graph(project_id, limit=500)
         source_nodes = [n for n in project_graph.nodes if n.label == "Source"]
 
-        # 1. Citation Grounding: Every empirical claim must have supporting_source_ids or CITES edges
+        # 1. Citation Grounding: Every empirical claim must have supporting_source_ids or CITES/SUPPORTS edges
         grounded_count = 0
         for c in claims:
             has_sources = len(c.supporting_source_ids) > 0
-            has_edges = any(e.source == c.id and e.relationship == "CITES" for e in project_graph.edges)
+            has_edges = any(
+                (e.source == c.id or e.target == c.id) and e.relationship in ("CITES", "SUPPORTS")
+                for e in project_graph.edges
+            )
             if has_sources or has_edges:
                 grounded_count += 1
         grounding_rate = round(grounded_count / len(claims), 4) if claims else 1.0
@@ -88,12 +91,16 @@ class EvaluationBenchmark:
 
 
 async def run_benchmark_cli() -> None:
-    repo = LocalGraphAdapter()
+    from app.graph.factory import create_graph_repository
+
+    repo = create_graph_repository()
     await repo.initialize()
-    await seed_demo_project(repo)
+    proj = await repo.get_project("proj-apexai-audit")
+    if not proj:
+        await seed_demo_project(repo)
 
     benchmark = EvaluationBenchmark(repo)
-    report = await benchmark.evaluate_project("proj-ai-tutoring")
+    report = await benchmark.evaluate_project("proj-apexai-audit")
 
     print("==================================================")
     print("        SWARMMIND QUALITY BENCHMARK REPORT        ")

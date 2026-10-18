@@ -1,5 +1,8 @@
-from typing import Sequence
+import asyncio
+from typing import Any, Coroutine, Sequence, TypeVar
 from app.schemas.task import Task
+
+T = TypeVar("T")
 
 
 class DependencyScheduler:
@@ -48,3 +51,9 @@ class DependencyScheduler:
             return True, "cancelled"
 
         return True, "completed"
+
+    async def execute_concurrent(self, coros: Sequence[Coroutine[Any, Any, T]]) -> list[T]:
+        """Execute independent agent sub-tasks or search operations concurrently using await asyncio.gather(...)."""
+        if not coros:
+            return []
+        return list(await asyncio.gather(*coros))

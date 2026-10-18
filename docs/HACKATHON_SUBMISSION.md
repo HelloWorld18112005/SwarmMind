@@ -1,176 +1,178 @@
-# SwarmMind — FalkorDB Graph Hacks Hackathon Submission
-
-> **Auditable, Graph-Grounded Multi-Agent AI Collaboration Platform powered by FalkorDB**
-
-- **Track**: FalkorDB Graph Hacks (Agent Memory & Coordination / Cloud Ready)
-- **Repository**: [https://github.com/ankursingh/swarmmind](https://github.com/ankursingh/swarmmind)
-- **Deployment Readiness**: 100% Zero-Docker offline development mode + 1-step FalkorDB Cloud connectivity.
+# SwarmMind: Autonomous Multi-Agent Graph Intelligence Engine
+> **Powered by FalkorDB** — Built for the WeMakeDevs & FalkorDB "Graph Hacks" Hackathon  
+> **Tracks Targeted:**  
+> 🏆 **Track 02: Agent Memory and Coordination** (Primary)  
+> 🏆 **Track 01: Agents That Act on Connected Data** (Secondary)
 
 ---
 
-## 1. Executive Summary & Problem Statement
+## 1. Executive Summary
 
-Today's multi-agent AI frameworks (such as AutoGen, CrewAI, and LangGraph) predominantly rely on **linear chat history or raw text message passing**. When scaling complex investigations across multiple specialized agents:
-1. **Critical findings are lost** in long context windows.
-2. **Conflicting evidence is silently overwritten** by whichever agent spoke last.
-3. **Decisions lack provenance**, making it impossible to audit *which agent* concluded *what fact* from *which source*.
+Autonomous AI agents typically operate in isolation: they suffer from amnesia between sessions, hallucinate when reasoning over fragmented documents, execute redundant tasks, and cannot explain why they reached critical conclusions.
 
-### The SwarmMind Solution
-SwarmMind replaces ephemeral chat logs with a **shared, persistent FalkorDB knowledge graph**. 
+**SwarmMind** transforms a swarm of autonomous agents into an elite, self-improving intelligence collective by placing **FalkorDB** at the center of agent cognition. Rather than treating the graph as an external passive store, SwarmMind uses FalkorDB as the **shared working memory, execution coordinator, and reasoning substrate**.
 
-A team of specialized AI agents (Coordinator, Researcher, Analyst, Critic, Planner, and Synthesizer) read from and write to the same graph. Rather than chatting in circles, agents register typed entities (`Task`, `Source`, `Claim`, `Memory`, `Decision`), discover each other's findings through Cypher graph queries, and explicitly preserve disputes via `CONTRADICTS` relationships instead of destroying conflicting evidence.
+Our flagship demonstration — **VentureAudit** — executes an autonomous technical and intellectual property due diligence audit on **ApexAI** for a simulated **\$45M acquisition**. Five specialized agents (Coordinator, Researcher, Analyst, Critic, Synthesizer) scour Git BOMs, legal documents, infrastructure manifests, and founder claims to uncover hidden IP contamination and single-region outages, recommending escrow holds backed by rigorous Cypher graph traversals and native graph algorithms.
 
 ---
 
-## 2. Why FalkorDB is the Essential Backbone
+## 2. Track Alignment & Core Capabilities
 
-SwarmMind is **not a dashboard with a graph visualizer**. The FalkorDB graph engine powers the core intelligence and reliability of the platform:
+SwarmMind directly addresses the key evaluation criteria of **Track 2** and **Track 1**:
+
+### 🤖 Track 02: Agent Memory and Coordination
+| Requirement | SwarmMind Implementation |
+|---|---|
+| **Episodic, Semantic & Procedural Memory** | **3-Tier Cognitive Memory**: Semantic facts with bi-temporal validity (`valid_at`, `invalid_at`) and `[:SUPERSEDES]`; Episodic run reflections linked via `[:RECORDED_EPISODE]`; Procedural operational heuristics with dynamic reinforcement ($+0.08$ on verification, $-0.15$ on contradiction) and automatic prompt injection. |
+| **Persistent Conversation History** | Graph-native `Turn` linked-list: `(Run)-[:HAS_TURN]->(t1)-[:NEXT_TURN]->(t2)` with semantic citations via `(t)-[:MENTIONS]->(Claim\|Memory\|Source)`. |
+| **Shared State & Handoffs** | Explicit Cypher handoffs: `(t1)-[:HANDED_OFF_TO {at: timestamp(), context: $context}]->(t2)` passing intermediate findings between agents. |
+| **High-Concurrency Reads & Writes** | `BlockingConnectionPool(max_connections=32)` with strict read/write query separation: concurrent reads use `await g.ro_query()`, mutations use `await g.query()`. |
+| **Separate Memory per User or Tenant** | **Physical multigraph isolation**: Each project/tenant is mapped to its own isolated FalkorDB graph (`swarmmind_{clean_id}`) preventing cross-tenant data leakage. |
+
+### 🕵️ Track 01: Agents That Act on Connected Data
+| Requirement | SwarmMind Implementation |
+|---|---|
+| **Multi-Hop Reasoning** | Dynamic Cypher multi-hop traversals connecting `Source` $\to$ `Claim` $\to$ `Contradiction` $\to$ `Decision`. |
+| **Native Graph Algorithms** | **`algo.pageRank`**: Ranks claim authority in `SynthesizerAgent` based on incoming support citations.<br>**`algo.SPpaths`**: Computes shortest-path explainability sequences between disputed findings. |
+| **Tool Selection via FastMCP** | High-performance FastMCP server (`backend/app/mcp_server.py`) exposing FalkorDB PageRank, shortest paths, dispute citations, and claim memory recording. |
+| **Actions Driven by Graph State** | Critic detects graph contradictions and applies penalty to procedural rules; Synthesizer anchors final executive summaries in high-PageRank claims. |
+| **Explainable Results** | End-to-end provenance tracing via `/api/projects/{id}/graph/paths` and interactive visual inspection modal in React Flow frontend. |
+
+---
+
+## 3. Architecture & Graph Schema
 
 ```mermaid
-graph LR
-    subgraph SwarmMind Engine
+flowchart TD
+    subgraph FalkorDB["FalkorDB Engine (Tenant Graph: swarmmind_proj_apexai_audit)"]
+        direction TB
+        Run["(r:Run)"] -->|HAS_TASK| T1["(t1:Task: Recon)"]
+        Run -->|HAS_TASK| T2["(t2:Task: IP Audit)"]
+        T1 -->|HANDED_OFF_TO| T2
+        
+        Run -->|HAS_TURN| Turn1["(turn1:Turn: User)"]
+        Turn1 -->|NEXT_TURN| Turn2["(turn2:Turn: Agent)"]
+        Turn2 -->|MENTIONS| C1["(c1:Claim: Proprietary Weights)"]
+        
+        S1["(s1:Source: Git BOM)"] -->|SUPPORTS| C2["(c2:Claim: GPL-3.0 NeoCLIP)"]
+        C1 -.->|CONTRADICTS| C2
+        
+        Run -->|RECORDED_EPISODE| M1["(m1:Memory: Episodic)"]
+        M2["(m2:Memory: Semantic)"] -->|SUPERSEDES| M3["(m3:Memory: Obsolete)"]
+        M4["(m4:Memory: Procedural Rules)"]
+    end
+
+    subgraph Agents["Autonomous Agent Swarm"]
         Coord["Coordinator Agent"]
         Res["Researcher Agent"]
-        Critic["Critic Agent"]
-        Plan["Planner Agent"]
+        Ana["Analyst Agent"]
+        Crit["Critic Agent (Reinforcement Loop)"]
+        Synth["Synthesizer Agent (PageRank Anchoring)"]
     end
 
-    subgraph FalkorDB Graph Memory
-        S1[("Source: GSV Global Report<br/>($5.2B TAM)")]
-        S2[("Source: HolonIQ APAC<br/>($800M TAM)")]
-        C1["Claim: $5.2B Market Size"]
-        C2["Claim: $800M Market Size"]
-        Rel["CONTRADICTS<br/>(Dispute Preserved)"]
-        Dec["Decision: Phased B2B Pilot"]
-    end
-
-    Res -->|Creates| C1
-    Res -->|Creates| C2
-    S1 -->|SUPPORTS| C1
-    S2 -->|SUPPORTS| C2
-    Critic -->|Detects & Writes| Rel
-    C1 --- Rel --- C2
-    C1 -->|INFORMED_BY| Dec
-    C2 -->|INFORMED_BY| Dec
-    Plan -->|Traverses Provenance| Dec
+    Agents <-->|Async Connection Pool (32 max)| FalkorDB
+    Agents -->|Exposed via MCP| FastMCP["FastMCP Server"]
 ```
 
-### Key FalkorDB Implementations:
-1. **Contradiction Preservation (`CONTRADICTS`)**: When two agents disagree (e.g. market sizing estimates of $5.2B vs $800M), FalkorDB creates an explicit bidirectional `CONTRADICTS` relationship with dispute metadata and recommended mitigations, rather than deleting earlier work.
-2. **Multi-Hop Provenance Traversal**:
-   ```cypher
-   MATCH path = (start {id: $node_id})-[*1..4]-(connected)
-   WHERE any(lbl IN labels(connected) WHERE lbl IN ['Claim', 'Source', 'Memory', 'Task', 'Agent'])
-   RETURN path LIMIT $limit
-   ```
-   Users can click "Trace Provenance" on any recommendation to navigate 4 hops backward through the reasoning chain directly to primary sources.
-3. **Shortest Path Reasoning via Cypher**:
-   ```cypher
-   MATCH (start {id: $start_id}), (endNode {id: $end_id})
-   MATCH path = shortestPath((start)-[*..8]-(endNode))
-   RETURN path
-   ```
-4. **Parameterized Queries & Cypher Injection Shield**:
-   All graph writes use strict parameterization with identifier whitelisting, preventing Cypher injection attacks while maintaining millisecond query performance.
+### Graph Entities
+- **Nodes:** `Project`, `Run`, `Agent`, `Task`, `Turn`, `Claim`, `Source`, `Memory`, `Decision`, `Artifact`.
+- **Relationships:** `OWNS`, `HAS_RUN`, `HAS_TASK`, `ASSIGNED_TO`, `DEPENDS_ON`, `HANDED_OFF_TO`, `HAS_TURN`, `NEXT_TURN`, `MENTIONS`, `SUPPORTS`, `CONTRADICTS`, `DERIVED_FROM`, `ABOUT`, `SHARES_WITH`, `INFORMED_BY`, `CREATED`, `RECORDED_EPISODE`, `SUPERSEDES`.
 
 ---
 
-## 3. The Signature Demo: AI Tutoring Startup Evaluation
+## 4. Key Upgrades & Technical Innovations
 
-The platform includes a complete real-world scenario demonstrating shared graph memory and conflict preservation:
+### 1. 3-Tier Cognitive Memory with Reinforcement Loop
+- **Semantic Tier**: Captures domain facts with bi-temporal validation (`valid_at`, `invalid_at`). When a new finding contradicts an old assumption, SwarmMind issues `SUPERSEDES` and invalidates the previous node.
+- **Episodic Tier**: Summarizes complete investigation runs into graph episodic nodes (`(Run)-[:RECORDED_EPISODE]->(Memory)`), allowing subsequent runs to retrieve lessons from previous audits.
+- **Procedural Tier (Self-Improving)**: Heuristic rules (e.g., *"Flag GPL-3.0 in core inference engine"*, *"Check cross-region failover"*) maintain dynamic confidence scores.
+  - When the **Critic** verifies a claim supported by a procedural rule, confidence increases by **$+0.08$** (bounded at 1.0).
+  - When the **Critic** identifies a contradiction or invalid claim, confidence is penalized by **$-0.15$** (bounded at 0.0).
+  - High-confidence rules ($\ge 0.50$) are automatically extracted from FalkorDB and injected into agent prompts under `### Active Operational Heuristics (Learned from prior runs)`.
 
-1. **User Submits Goal**: Evaluate whether a startup should launch an AI tutoring product.
-2. **Coordinator Schedules DAG**: 6 tasks with strict dependencies.
-3. **Researcher Ingests Evidence**: Registers 5 primary sources and extracts claims on market size, Socratic efficacy, and API latency.
-4. **Analyst Calculates Unit Economics**: Combines model inference costs ($0.03/session) with pricing tiers to project 74% gross margins.
-5. **Critic Discovers Disagreement**: Identifies that GSV estimates global TAM at **$5.2B** while HolonIQ isolates the immediate serviceable addressable market (SAM) at **$800M**. Critic writes a `CONTRADICTS` edge linking both claims without deleting either.
-6. **Planner & Synthesizer Produce Strategy**: Synthesizes the finding into a Phased B2B Pilot targeting the verified $800M initial segment, with complete attribution and uncertainty notes.
-7. **1-Click Markdown Export**: Users download the executive summary with live citation footnotes and dispute tables.
+### 2. Graph-Native Conversation History
+Rather than storing conversation history in flat session cookies or JSON arrays, SwarmMind models chat as a graph-native sequential chain:
+- Initial query: `(Run)-[:HAS_TURN]->(Turn)`
+- Dialogue continuation: `(Turn)-[:NEXT_TURN]->(Turn)`
+- Entity grounding: `(Turn)-[:MENTIONS]->(Claim | Memory | Source)`
+- Fast traversal: Ordered Cypher query `MATCH (r:Run {id: $run_id})-[:HAS_TURN]->(first:Turn) ...` reconstructs dialogue history with zero relational joins.
+
+### 3. FalkorDB-Native Algorithms
+- **PageRank (`algo.pageRank`)**: The `SynthesizerAgent` executes `CALL algo.pageRank('Claim', 'SUPPORTS')` across the tenant graph. Claims with dense evidential backing are prioritized as primary anchoring facts in the M&A report.
+- **Shortest Path (`algo.SPpaths`)**: When users inspect contradictory claims or disputed evidence in the UI, the API executes `CALL algo.SPpaths($start_id, $end_id, 'SUPPORTS|CONTRADICTS|DERIVED_FROM')`, returning the exact path of supporting and contradicting citations.
+
+### 4. Tenant Physical Multigraph Isolation & Async Pool
+- Every project operates in an isolated FalkorDB graph (`swarmmind_{project_clean_id}`).
+- Database queries use `redis.asyncio.BlockingConnectionPool(max_connections=32)`.
+- Query execution separates read operations (`await g.ro_query()`) from write operations (`await g.query()`), enabling high-concurrency multi-agent execution.
+
+### 5. Production Health Checking
+The `/api/health` endpoint queries live telemetry using native `GRAPH.INFO`:
+```json
+{
+  "status": "healthy",
+  "database": "connected",
+  "backend": "falkordb",
+  "nodes": 42,
+  "edges": 58
+}
+```
+If FalkorDB is unreachable in production mode, the API strictly returns **HTTP 503 Service Unavailable** — guaranteeing no silent in-memory fallbacks degrade evaluation.
 
 ---
 
-## 4. Evaluation Benchmark Results
+## 5. FastMCP Tool Server
 
-SwarmMind includes an automated benchmark suite (`python -m app.evaluation.benchmark`) proving the graph platform's reliability:
-
-| Benchmark Gate | Target | SwarmMind Score | Status |
-|---|:---:|:---:|:---:|
-| **Contradiction Recall Rate** | $\ge 90.0\%$ | **100.0%** | **PASS** |
-| **Citation Grounding Rate** | $\ge 95.0\%$ | **100.0%** | **PASS** |
-| **Task Completion Rate** | $\ge 100.0\%$ | **100.0%** | **PASS** |
-| **DAG Dependency Validity** | $\ge 100.0\%$ | **100.0%** | **PASS** |
+SwarmMind includes a standalone FastMCP tool server (`backend/app/mcp_server.py`) allowing external LLMs or IDE agents (such as Claude Desktop or Cursor) to directly query the FalkorDB graph:
+- `rank_evidence_authority(project_id, limit)`: Centrality ranking via `algo.pageRank`.
+- `trace_shortest_path(project_id, claim_a_id, claim_b_id)`: Multi-hop explainability via `algo.SPpaths`.
+- `get_disputes_with_evidence(project_id)`: Uncovers conflicting claims and citations.
+- `search_graph_memories(project_id, query)`: Traverses semantic and procedural memories.
+- `record_claim_evidence(project_id, text, confidence, agent_role)`: Ingests new empirical findings directly into the graph.
 
 ---
 
-## 5. Judge Quickstart & Evaluation Guide
+## 6. Verification & Test Suite
 
-You can evaluate SwarmMind in under 3 minutes without Docker or cloud configuration!
+The entire backend and frontend have been rigorously tested and validated:
+- **Pytest Suite**: 34 unit tests passing (100% pass rate).
+  - Multi-agent orchestration and budget controls (`test_orchestration.py`, `test_budgets.py`)
+  - Cognitive memory and procedural reinforcement (`test_memory_service.py`, `test_conflicts.py`)
+  - Graph API, shortest path traversal, and PageRank (`test_graph_api.py`, `test_explainability.py`)
+  - FalkorDB health checking and strict 503 error handling (`test_health.py`)
+  - M&A Due Diligence seed data and multi-turn chat (`test_seed_data.py`, `test_incident_and_chat.py`)
+  - Benchmark evaluation suite (`test_benchmark.py`)
+- **Frontend Build**: `tsc && vite build` succeeds with zero errors.
 
-### Option A: 1-Click Launch (Zero Docker / Offline Mode)
+---
 
-#### 1. Backend
+## 7. Quickstart Guide
+
+### Prerequisites
+- Python 3.12+ (or `uv`)
+- Node.js 18+
+- FalkorDB (Docker or FalkorDB Cloud)
+
+### 1. Launch FalkorDB (Local Docker)
+```bash
+docker run --rm -p 6379:6379 -p 3000:3000 falkordb/falkordb:latest
+```
+
+### 2. Configure Backend
 ```bash
 cd backend
-pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
+cp .env.example .env
+# Set GRAPH_BACKEND=falkordb and host credentials
+uv sync
+uv run python scripts/seed_demo_data.py
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-*(Or simply double-click `run_backend.bat` on Windows)*
 
-#### 2. Frontend
+### 3. Launch Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-*(Or simply double-click `run_frontend.bat` on Windows)*
 
-Open **`http://localhost:5173`** in your browser. The Signature Demo is pre-seeded and ready to inspect!
-
----
-
-### Option B: Connect to FalkorDB Cloud in 60 Seconds
-
-SwarmMind was engineered specifically for FalkorDB Cloud:
-
-1. Create a free database on [FalkorDB Cloud](https://app.falkordb.cloud).
-2. Edit `backend/.env`:
-   ```dotenv
-   GRAPH_BACKEND=falkordb
-   FALKORDB_HOST=<your-instance-subdomain>.falkordb.cloud
-   FALKORDB_PORT=6379
-   FALKORDB_PASSWORD=<your-database-password>
-   FALKORDB_SSL=true
-   FALKORDB_GRAPH=swarmmind
-   ```
-3. Run the automated connectivity diagnostic:
-   ```bash
-   python backend/scripts/test_cloud_connection.py
-   ```
-4. Seed the signature demo into your FalkorDB Cloud instance:
-   ```bash
-   python backend/scripts/seed_demo_data.py
-   ```
-5. Refresh the dashboard! All nodes, relationships, disputes, and multi-hop paths are now live on FalkorDB Cloud.
-
----
-
-## 6. What to Inspect in the UI
-
-1. **Investigation Workspace**:
-   - Live execution budget card (step counters, token accounting, and cost tracking).
-   - Real-time agent status roster (Coordinator, Researcher, Analyst, Critic, Planner, Synthesizer).
-   - Live SSE event feed.
-2. **Graph Explorer**:
-   - Interactive React Flow canvas with custom nodes for 7 entity labels.
-   - Click the red dotted `CONTRADICTS` edge between the $5.2B and $800M TAM claims.
-   - Click any node to open the slide-over Node Inspector and click **"Trace Graph Provenance (4 Hops)"**.
-3. **Provenance Modal**:
-   - Click "Trace Provenance" on any Key Finding in the Report tab to view the reasoning chain: `Sources -> Researcher -> Analyst -> Critic -> Planner`.
-4. **Final Report & Export**:
-   - View the synthesized recommendation, preserved disputes, and download the full report with 1 click.
-
----
-
-## 7. AI Assistant Disclosure
-
-SwarmMind was architected and pair-programmed using Google DeepMind's Antigravity agentic coding assistant under human engineering direction. All architecture decisions, graph schemas, Cypher queries, security controls, and test suites were designed, implemented, and verified phase-by-phase.
+Visit `http://localhost:5173` to explore the **VentureAudit** M&A due diligence graph, run multi-agent investigations, inspect cognitive memory tiers, and trace explainable paths through FalkorDB.

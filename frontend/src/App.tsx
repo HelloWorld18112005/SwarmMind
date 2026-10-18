@@ -9,6 +9,7 @@ import {
   FileText,
   Brain,
   CheckCircle2,
+  Trash2,
 } from 'lucide-react';
 import { api } from './lib/api';
 import { HealthResponse, Project } from './types';
@@ -42,7 +43,7 @@ export default function App() {
       setProjects(projectsData);
 
       if (projectsData.length > 0 && !activeProject) {
-        const demoProj = projectsData.find((p) => p.id === 'proj-ai-tutoring') || projectsData[0];
+        const demoProj = projectsData.find((p) => p.id === 'proj-apexai-audit') || projectsData.find((p) => p.id === 'proj-ai-tutoring') || projectsData[0];
         setActiveProject(demoProj);
       }
     } finally {
@@ -54,16 +55,38 @@ export default function App() {
     fetchData();
   }, []);
 
-  const handleSeedDemo = async () => {
+  const handleSeedScenario = async (scenario: string = 'all') => {
     setSeeding(true);
     try {
-      await api.seedDemo();
-      showToast('Loaded AI Tutoring startup evaluation graph (6 agents, 6 tasks, 5 sources, 4 claims, and TAM contradiction)!');
+      await api.seedDemo(scenario);
+      if (scenario === 'incident') {
+        showToast('Loaded Production Incident & Architecture Investigation (2 sequential runs, contradiction, turns & procedural rules)!');
+      } else if (scenario === 'venture_audit' || scenario === 'ai_tutoring') {
+        showToast('Loaded ApexAI Acquisition Due Diligence graph (6 agents, 6 tasks, 4 sources, 4 claims, and GPL/uptime contradictions)!');
+      } else {
+        showToast('Loaded hackathon demo scenarios into isolated FalkorDB tenant graphs!');
+      }
       await fetchData();
     } catch (err: any) {
       alert(`Seeding failed: ${err.message}`);
     } finally {
       setSeeding(false);
+    }
+  };
+
+  const handleClearData = async () => {
+    if (!window.confirm('Clear all workspace graphs and start completely fresh?')) return;
+    setLoading(true);
+    try {
+      await api.clearDemo();
+      setProjects([]);
+      setActiveProject(null);
+      showToast('All workspace data and graphs have been reset.');
+      await fetchData();
+    } catch (err: any) {
+      alert(`Clear failed: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -100,35 +123,67 @@ export default function App() {
           {/* Project Selector & Actions */}
           <div className="flex items-center space-x-3">
             {projects.length > 0 && (
-              <div className="flex items-center space-x-2 bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
+              <div className="flex items-center space-x-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-indigo-500/30 text-xs shadow-inner">
                 <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                <span className="text-slate-400">Project:</span>
-                <select
-                  value={activeProject?.id || ''}
-                  onChange={(e) => {
-                    const found = projects.find((p) => p.id === e.target.value);
-                    if (found) setActiveProject(found);
-                  }}
-                  className="bg-transparent text-slate-200 font-medium outline-none cursor-pointer"
-                >
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] uppercase font-bold text-indigo-300 tracking-wider">Tenant / Workspace Graph:</span>
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/80">
+                      swarmmind:{activeProject?.id || 'default'}
+                    </span>
+                  </div>
+                  <select
+                    value={activeProject?.id || ''}
+                    onChange={(e) => {
+                      const found = projects.find((p) => p.id === e.target.value);
+                      if (found) setActiveProject(found);
+                    }}
+                    className="bg-transparent text-slate-200 font-medium outline-none cursor-pointer text-xs"
+                  >
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
 
-            <button
-              onClick={handleSeedDemo}
-              disabled={seeding}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 font-medium text-xs transition"
-              title="Preload complete AI Tutoring evaluation graph"
-            >
-              <Sparkles className={`w-3.5 h-3.5 ${seeding ? 'animate-spin' : ''}`} />
-              <span>{seeding ? 'Seeding...' : 'Seed Demo Data'}</span>
-            </button>
+            {/* Scenario Quick-Seed Dropdown */}
+            <div className="flex items-center space-x-1.5 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-indigo-500/30 hover:border-indigo-500/60 transition">
+              <Sparkles className={`w-3.5 h-3.5 text-indigo-400 ${seeding ? 'animate-spin' : ''}`} />
+              <select
+                disabled={seeding}
+                onChange={(e) => {
+                  if (e.target.value === '__CLEAR__') {
+                    handleClearData();
+                  } else if (e.target.value) {
+                    handleSeedScenario(e.target.value);
+                  }
+                  e.target.value = '';
+                }}
+                defaultValue=""
+                className="bg-transparent text-indigo-300 font-medium text-xs outline-none cursor-pointer"
+                title="Select a hackathon demo scenario to seed"
+              >
+                <option value="" disabled className="bg-slate-900 text-slate-400">
+                  {seeding ? 'Seeding demo...' : '⚡ Seed Demo Scenario...'}
+                </option>
+                <option value="incident" className="bg-slate-900 text-slate-200">
+                  ⚡ Outage & Remediation (2 Runs, Procedural Penalty, Turns)
+                </option>
+                <option value="ai_tutoring" className="bg-slate-900 text-slate-200">
+                  💼 ApexAI M&A Due Diligence ($45M Escrow, Contradiction, PageRank)
+                </option>
+                <option value="all" className="bg-slate-900 text-slate-200">
+                  ✨ Seed Both Scenarios
+                </option>
+                <option value="__CLEAR__" className="bg-slate-900 text-rose-400 font-medium">
+                  🗑️ Clear / Reset All Workspaces
+                </option>
+              </select>
+            </div>
 
             <div className="flex items-center space-x-2 px-3 py-1.5 rounded-xl border border-slate-800 bg-slate-900 text-xs">
               <Database className="w-3.5 h-3.5 text-indigo-400" />
@@ -138,6 +193,15 @@ export default function App() {
               </span>
               <span className={`w-2 h-2 rounded-full ${health ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
             </div>
+
+            <button
+              onClick={handleClearData}
+              disabled={loading}
+              className="p-2 rounded-xl border border-slate-800 hover:border-rose-500/50 bg-slate-900 hover:bg-rose-950/30 text-slate-400 hover:text-rose-300 transition"
+              title="Clear all workspace data and reset graphs"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
 
             <button
               onClick={fetchData}

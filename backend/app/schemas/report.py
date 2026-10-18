@@ -9,6 +9,8 @@ class Recommendation(BaseModel):
     priority: str = "medium"
     supporting_claim_ids: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
+    provenance_chain: list[str] = Field(default_factory=list)
+    pagerank_score: float | None = None
 
 
 class ConflictItem(BaseModel):

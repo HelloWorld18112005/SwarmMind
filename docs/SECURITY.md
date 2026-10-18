@@ -1,53 +1,33 @@
-# SwarmMind Security, Privacy & Isolation Architecture
+# SwarmMind Security, Isolation & Governance
 
-SwarmMind enforces multi-layered enterprise security controls across multi-agent communications, graph database interactions, and user workspaces.
-
----
-
-## 1. Secret Redaction Engine
-
-Because multi-agent swarms ingest heterogeneous text from tools, web pages, and model completions, sensitive credentials must never leak into persistent graph storage or shared agent memory.
-
-SwarmMind implements an in-process, high-performance regex sanitizer located at [`backend/app/security/redaction.py`](file:///c:/Users/ankur/Desktop/swarmmind/backend/app/security/redaction.py).
-
-### Protected Credential Patterns
-
-| Secret Type | Regex Pattern | Redaction Output |
-|---|---|---|
-| **OpenAI API Key** | `sk-[a-zA-Z0-9_-]{20,}` | `sk-***[REDACTED]***` |
-| **Google Gemini Key** | `AIzaSy[a-zA-Z0-9_-]{33}` | `AIzaSy***[REDACTED]***` |
-| **FalkorDB / Redis Password** | `(?:password\|passwd\|pwd)\s*[:=]\s*['"]?([^'"\s&;]+)['"]?` | `password=***[REDACTED]***` |
-| **Bearer Authorization Token** | `Bearer\s+[a-zA-Z0-9_\-\.]{16,}` | `Bearer ***[REDACTED]***` |
-| **Generic Secret Assignments** | `(?:api[_-]?key\|secret)\s*[:=]\s*['"]?([^'"\s&;]+)['"]?` | `key=***[REDACTED]***` |
-
-### Enforcement Point
-Secret redaction is hooked into `MemoryService.save_memory()` and `MemoryService.create_claim()`. Any memory or claim written to either `LocalGraphAdapter` or `FalkorDBAdapter` is scrubbed prior to persistence.
+SwarmMind enforces enterprise-grade security boundaries across graph storage, agent execution, and credential handling.
 
 ---
 
-## 2. Cypher Injection Prevention & Query Parameterization
+## 🛡️ Core Security Architecture
 
-All database reads and writes execute through parameterized Cypher queries:
-- Query identifiers (`labels`, `relationship_types`) are strictly sanitized via [`app/security/sanitization.py`](file:///c:/Users/ankur/Desktop/swarmmind/backend/app/security/sanitization.py), permitting only alphanumeric characters and underscores (`[A-Za-z0-9_]`).
-- All user-supplied strings, goals, memory texts, IDs, and filters are bound as Cypher parameters (e.g. `MATCH (p:Project {id: $id})`), eliminating Cypher string interpolation vulnerabilities.
+### 1. Multi-Tenant Physical Multigraph Isolation
+Rather than using soft filtering (e.g. `WHERE p.tenant_id = $id`), SwarmMind leverages FalkorDB's native multigraph topology:
+- Every project/tenant is mapped to an isolated FalkorDB graph: `swarmmind_{clean_project_id}`.
+- Cross-tenant queries are structurally impossible at the database engine level.
+- Deleting a project cleanly invokes `GRAPH.DELETE`, scrubbing all associated tenant nodes and relationships without affecting other workspaces.
 
----
+### 2. Secret Redaction Engine (`app.security.redaction`)
+Before any text content, source snippet, or memory is persisted to FalkorDB:
+- All common API keys and access tokens are detected via regular expression matching:
+  - OpenAI / Anthropic keys (`sk-[A-Za-z0-9_-]{32,}`)
+  - Google Cloud / Gemini keys (`AIzaSy[A-Za-z0-9_-]{33}`)
+  - AWS Access Keys (`AKIA[0-9A-Z]{16}`)
+  - Generic Bearer tokens and private credentials
+- Matches are sanitized to `[REDACTED_SECRET]` before persistence, preventing credential leaks into the shared graph memory.
 
-## 3. Workspace & Cross-Project Isolation
+### 3. Cypher Injection Defense (`app.security.sanitization`)
+- All Cypher queries strictly use parameterized Cypher syntax (`$project_id`, `$claim_id`, `$delta`).
+- Any dynamic identifiers (such as graph names) undergo strict regex character filtering (`^[a-zA-Z0-9_-]+$`) to prevent graph escape vectors.
 
-SwarmMind enforces strict boundary isolation between projects:
-- Every Cypher query and memory lookup is explicitly filtered by `project_id`.
-- Automated test [`backend/tests/unit/test_security_isolation.py`](file:///c:/Users/ankur/Desktop/swarmmind/backend/tests/unit/test_security_isolation.py) verifies that claims, memories, and graph nodes created in Project A are completely inaccessible from queries originating in Project B.
-
----
-
-## 4. Execution Budget & Financial Governance
-
-To prevent runaway agent loops, denial of wallet, or infinite recursion:
-1. **Agent Step Limit**: Hard maximum of 20 execution steps per run (`MAX_AGENT_STEPS = 20`).
-2. **Execution Timeout**: 10-minute wall-clock cap (`MAX_RUN_DURATION_SECONDS = 600`).
-3. **Concurrency Bounding**: Maximum of 3 concurrent agent tasks (`MAX_CONCURRENT_AGENTS = 3`).
-4. **Token & Cost Accounting**: Live financial tracking computed at:
-   - Input: **$0.50 per 1M tokens**
-   - Output: **$1.50 per 1M tokens**
-   - Live telemetry exposed via `GET /api/runs/{run_id}/budget` and displayed in the frontend workspace header.
+### 4. Financial Budgets & Token Accounting
+- Swarm runs are governed by token budgets and duration guardrails:
+  - Default input pricing: `$0.50` per 1M tokens.
+  - Default output pricing: `$1.50` per 1M tokens.
+  - Per-run ceiling: Maximum 20 agent steps and 600-second execution timeout.
+  - Runs exceeding budgets trigger automatic graceful termination, preventing runaway API expenditures.

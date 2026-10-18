@@ -11,6 +11,7 @@ from app.schemas.task import Task
 from app.schemas.memory import Memory, MemoryUpdate
 from app.schemas.claim import Claim, Source
 from app.schemas.graph import GraphData, GraphNode, GraphEdge
+from app.schemas.chat import Turn
 
 
 class LocalGraphAdapter(GraphRepository):
@@ -23,6 +24,8 @@ class LocalGraphAdapter(GraphRepository):
         self._memories: dict[str, Memory] = {}
         self._claims: dict[str, Claim] = {}
         self._sources: dict[str, Source] = {}
+        self._turns: dict[str, Turn] = {}
+        self._episodes: list[dict[str, Any]] = []
         self._nodes: dict[str, GraphNode] = {}
         self._edges: list[GraphEdge] = []
         self._lock = asyncio.Lock()
@@ -37,11 +40,11 @@ class LocalGraphAdapter(GraphRepository):
     async def check_health(self) -> dict[str, Any]:
         return {
             "status": "healthy",
-            "backend": "local",
+            "database": "local",
+            "nodes": len(self._nodes),
+            "edges": len(self._edges),
             "initialized": self._is_initialized,
             "project_count": len(self._projects),
-            "node_count": len(self._nodes),
-            "edge_count": len(self._edges),
         }
 
     async def create_project(self, project: Project) -> Project:
@@ -84,9 +87,60 @@ class LocalGraphAdapter(GraphRepository):
             if project_id not in self._projects:
                 return False
             del self._projects[project_id]
-            self._nodes.pop(project_id, None)
-            self._edges = [e for e in self._edges if e.source != project_id and e.target != project_id]
+
+            # Cascade delete all runs, tasks, memories, claims, sources belonging to this project
+            run_ids = {r.id for r in self._runs.values() if r.project_id == project_id}
+            for r_id in run_ids:
+                self._runs.pop(r_id, None)
+
+            task_ids = {t.id for t in self._tasks.values() if t.project_id == project_id}
+            for t_id in task_ids:
+                self._tasks.pop(t_id, None)
+
+            claim_ids = {c.id for c in self._claims.values() if c.project_id == project_id}
+            for c_id in claim_ids:
+                self._claims.pop(c_id, None)
+
+            source_ids = {s.id for s in self._sources.values() if s.project_id == project_id}
+            for s_id in source_ids:
+                self._sources.pop(s_id, None)
+
+            mem_ids = {m.id for m in self._memories.values() if m.project_id == project_id}
+            for m_id in mem_ids:
+                self._memories.pop(m_id, None)
+
+            # Clean nodes and edges
+            to_remove_nodes = {
+                n_id for n_id, n in self._nodes.items()
+                if n_id == project_id
+                or n.properties.get("project_id") == project_id
+                or n_id in run_ids
+                or n_id in task_ids
+                or n_id in claim_ids
+                or n_id in mem_ids
+                or n_id in source_ids
+            }
+            for n_id in to_remove_nodes:
+                self._nodes.pop(n_id, None)
+
+            self._edges = [
+                e for e in self._edges
+                if e.source not in to_remove_nodes and e.target not in to_remove_nodes
+            ]
             return True
+
+    async def clear_all(self) -> None:
+        async with self._lock:
+            self._projects.clear()
+            self._runs.clear()
+            self._tasks.clear()
+            self._memories.clear()
+            self._claims.clear()
+            self._sources.clear()
+            self._turns.clear()
+            self._episodes.clear()
+            self._nodes.clear()
+            self._edges.clear()
 
     async def create_run(self, run: Run) -> Run:
         async with self._lock:
@@ -234,7 +288,8 @@ class LocalGraphAdapter(GraphRepository):
 
     async def list_memories(self, project_id: str, query: str | None = None, limit: int = 50) -> list[Memory]:
         async with self._lock:
-            results = [m for m in self._memories.values() if m.project_id == project_id]
+            # Filter out invalidated / superseded memories
+            results = [m for m in self._memories.values() if m.project_id == project_id and not m.invalid_at]
             if query:
                 q_lower = query.lower()
                 results = [m for m in results if q_lower in m.content.lower()]
@@ -249,12 +304,23 @@ class LocalGraphAdapter(GraphRepository):
                 memory.content = updates.content
             if updates.memory_type is not None:
                 memory.memory_type = updates.memory_type
+            if updates.instruction is not None:
+                memory.instruction = updates.instruction
             if updates.confidence is not None:
                 memory.confidence = updates.confidence
+            if updates.valid_at is not None:
+                memory.valid_at = updates.valid_at
+            if updates.invalid_at is not None:
+                memory.invalid_at = updates.invalid_at
+            if updates.successes is not None:
+                memory.successes = updates.successes
+            if updates.failures is not None:
+                memory.failures = updates.failures
             memory.updated_at = datetime.utcnow()
             if memory_id in self._nodes:
                 self._nodes[memory_id].title = memory.content[:40]
                 self._nodes[memory_id].properties["content"] = memory.content
+                self._nodes[memory_id].properties["confidence"] = memory.confidence
             return memory
 
     async def delete_memory(self, memory_id: str) -> bool:
@@ -265,6 +331,187 @@ class LocalGraphAdapter(GraphRepository):
             self._nodes.pop(memory_id, None)
             self._edges = [e for e in self._edges if e.source != memory_id and e.target != memory_id]
             return True
+
+    async def supersede_memory(self, old_memory_id: str, new_memory: Memory) -> Memory:
+        async with self._lock:
+            old_mem = self._memories.get(old_memory_id)
+            if old_mem:
+                old_mem.invalid_at = datetime.utcnow()
+                if old_memory_id in self._nodes:
+                    self._nodes[old_memory_id].properties["invalid_at"] = old_mem.invalid_at.isoformat()
+            await self.save_memory(new_memory)
+            await self.record_relationship(new_memory.id, old_memory_id, "SUPERSEDES")
+            return new_memory
+
+    async def get_procedural_memories(self, project_id: str, min_confidence: float = 0.55, limit: int = 5) -> list[Memory]:
+        async with self._lock:
+            procs = [
+                m for m in self._memories.values()
+                if m.project_id == project_id
+                and m.memory_type == "procedural"
+                and m.confidence >= min_confidence
+                and not m.invalid_at
+            ]
+            return sorted(procs, key=lambda m: m.confidence, reverse=True)[:limit]
+
+    async def adjust_procedural_confidence(self, project_id: str, delta: float) -> list[Memory]:
+        async with self._lock:
+            updated_list: list[Memory] = []
+            for m in self._memories.values():
+                if m.project_id == project_id and m.memory_type == "procedural":
+                    m.confidence = max(0.0, min(1.0, m.confidence + delta))
+                    if delta > 0:
+                        m.successes += 1
+                    elif delta < 0:
+                        m.failures += 1
+                    m.updated_at = datetime.utcnow()
+                    if m.id in self._nodes:
+                        self._nodes[m.id].properties["confidence"] = m.confidence
+                        self._nodes[m.id].properties["successes"] = m.successes
+                        self._nodes[m.id].properties["failures"] = m.failures
+                    updated_list.append(m)
+            return updated_list
+
+    async def record_episode(self, run_id: str, memory_id: str, outcome: str) -> None:
+        async with self._lock:
+            episode = {
+                "run_id": run_id,
+                "memory_id": memory_id,
+                "outcome": outcome,
+                "recorded_at": datetime.utcnow().isoformat(),
+            }
+            self._episodes.append(episode)
+            self._edges.append(
+                GraphEdge(
+                    id=f"edge-{run_id}-episode-{memory_id}",
+                    source=run_id,
+                    target=memory_id,
+                    relationship="RECORDED_EPISODE",
+                    properties={"outcome": outcome},
+                )
+            )
+
+    async def get_episodes(self, project_id: str, limit: int = 10) -> list[dict[str, Any]]:
+        async with self._lock:
+            run_ids = {r.id for r in self._runs.values() if r.project_id == project_id}
+            episodes = [ep for ep in self._episodes if ep["run_id"] in run_ids]
+            # Attach memory content
+            for ep in episodes:
+                mem = self._memories.get(ep["memory_id"])
+                if mem:
+                    ep["content"] = mem.content
+            return episodes[:limit]
+
+    async def create_turn(self, turn: Turn) -> Turn:
+        async with self._lock:
+            self._turns[turn.id] = turn
+            self._nodes[turn.id] = GraphNode(
+                id=turn.id,
+                label="Turn",
+                title=f"[{turn.role}] {turn.content[:35]}",
+                properties={"role": turn.role, "content": turn.content, "run_id": turn.run_id},
+            )
+            # Link Run -> Turn
+            self._edges.append(
+                GraphEdge(
+                    id=f"edge-{turn.run_id}-has_turn-{turn.id}",
+                    source=turn.run_id,
+                    target=turn.id,
+                    relationship="HAS_TURN",
+                )
+            )
+            # Link Prev Turn -> Turn
+            if turn.prev_turn_id:
+                self._edges.append(
+                    GraphEdge(
+                        id=f"edge-{turn.prev_turn_id}-next_turn-{turn.id}",
+                        source=turn.prev_turn_id,
+                        target=turn.id,
+                        relationship="NEXT_TURN",
+                    )
+                )
+            # Link Turn -> Claim mentions
+            for cid in turn.mentioned_claim_ids:
+                if cid in self._claims:
+                    self._edges.append(
+                        GraphEdge(
+                            id=f"edge-{turn.id}-mentions-{cid}",
+                            source=turn.id,
+                            target=cid,
+                            relationship="MENTIONS",
+                        )
+                    )
+            return turn
+
+    async def list_turns(self, run_id: str) -> list[Turn]:
+        async with self._lock:
+            turns = [t for t in self._turns.values() if t.run_id == run_id]
+            return sorted(turns, key=lambda t: t.created_at)
+
+    async def get_conversation_history(self, run_id: str) -> list[Turn]:
+        """Traverse conversation turns in sequence order."""
+        return await self.list_turns(run_id)
+
+    async def record_turn_mention(self, turn_id: str, claim_id: str) -> None:
+        async with self._lock:
+            self._edges.append(
+                GraphEdge(
+                    id=f"edge-{turn_id}-mentions-{claim_id}",
+                    source=turn_id,
+                    target=claim_id,
+                    relationship="MENTIONS",
+                )
+            )
+
+    async def record_task_handoff(
+        self,
+        from_task_id: str,
+        to_task_id: str,
+        from_agent: str = "",
+        to_agent: str = "",
+        context: str = "",
+    ) -> None:
+        async with self._lock:
+            self._edges.append(
+                GraphEdge(
+                    id=f"edge-handoff-{from_task_id}-{to_task_id}",
+                    source=from_task_id,
+                    target=to_task_id,
+                    relationship="HANDED_OFF_TO",
+                    properties={
+                        "from_agent": from_agent,
+                        "to_agent": to_agent,
+                        "context": context,
+                        "at": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.utcnow().isoformat(),
+                    },
+                )
+            )
+
+    async def get_claim_authority(self, project_id: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Rank claims by centrality using graph in-degree support."""
+        async with self._lock:
+            claims = [c for c in self._claims.values() if c.project_id == project_id]
+            scored = []
+            for c in claims:
+                in_degree = sum(1 for e in self._edges if e.target == c.id and e.relationship in ("SUPPORTS", "DERIVED_FROM", "CITES"))
+                score = round(c.confidence * (1.0 + 0.3 * in_degree), 3)
+                scored.append({"claim_id": c.id, "text": c.text, "claim": c.text, "score": score})
+            scored.sort(key=lambda x: x["score"], reverse=True)
+            return scored[:limit]
+
+    # Backward-compatible alias
+    rank_evidence_authority = get_claim_authority
+
+    async def trace_evidence_path(self, project_id: str, start_id: str, end_id: str) -> list[str]:
+        path_data = await self.find_shortest_path(project_id, start_id, end_id)
+        if not path_data.nodes:
+            return [start_id, end_id]
+        return [n.title for n in path_data.nodes]
+
+    # Backward-compatible alias
+    async def trace_shortest_path_algo(self, project_id: str, claim_a_id: str, claim_b_id: str) -> list[str]:
+        return await self.trace_evidence_path(project_id, claim_a_id, claim_b_id)
 
     async def save_claim(self, claim: Claim) -> Claim:
         async with self._lock:
@@ -281,6 +528,24 @@ class LocalGraphAdapter(GraphRepository):
                     "agent_role": claim.agent_role,
                 },
             )
+            if claim.project_id:
+                self._edges.append(
+                    GraphEdge(
+                        id=f"edge-{claim.project_id}-about-{claim.id}",
+                        source=claim.project_id,
+                        target=claim.id,
+                        relationship="ABOUT",
+                    )
+                )
+            if claim.agent_id:
+                self._edges.append(
+                    GraphEdge(
+                        id=f"edge-{claim.agent_id}-produced-{claim.id}",
+                        source=claim.agent_id,
+                        target=claim.id,
+                        relationship="PRODUCED",
+                    )
+                )
             for src_id in claim.supporting_source_ids:
                 self._edges.append(
                     GraphEdge(

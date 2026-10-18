@@ -74,8 +74,13 @@ export interface Memory {
   agent_role?: string;
   task_id?: string;
   content: string;
-  memory_type: 'fact' | 'observation' | 'rule' | 'hypothesis' | 'summary';
+  memory_type: 'fact' | 'observation' | 'rule' | 'hypothesis' | 'summary' | 'semantic' | 'episodic' | 'procedural';
   confidence: number;
+  instruction?: string;
+  successes?: number;
+  failures?: number;
+  valid_at?: string;
+  invalid_at?: string;
   tags: string[];
   created_at: string;
   updated_at: string;
@@ -121,6 +126,42 @@ export interface Recommendation {
   priority: string;
   supporting_claim_ids: string[];
   risks: string[];
+  pagerank_score?: number;
+  provenance_chain?: string[];
+}
+
+export interface Turn {
+  id: string;
+  run_id: string;
+  role: 'user' | 'assistant' | 'agent' | 'system' | string;
+  content: string;
+  prev_turn_id?: string | null;
+  mentioned_claim_ids: string[];
+  created_at: string;
+}
+
+export interface ChatRequest {
+  message: string;
+  role?: 'user' | 'agent';
+}
+
+export interface ChatResponse {
+  user_turn: Turn;
+  assistant_turn?: Turn | null;
+  mentioned_claims: Array<{ id: string; text: string }>;
+}
+
+export interface FeedbackRequest {
+  action: 'approve' | 'challenge' | string;
+  notes?: string;
+}
+
+export interface FeedbackResponse {
+  status: string;
+  action: string;
+  message: string;
+  updated_rules_count: number;
+  rules: Array<{ id: string; instruction: string; confidence: number }>;
 }
 
 export interface ConflictItem {

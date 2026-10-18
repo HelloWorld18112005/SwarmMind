@@ -12,6 +12,7 @@ class NodeLabel(str, Enum):
     SOURCE = "Source"
     DECISION = "Decision"
     ARTIFACT = "Artifact"
+    TURN = "Turn"
 
 
 class RelationshipType(str, Enum):
@@ -29,6 +30,12 @@ class RelationshipType(str, Enum):
     SHARES_WITH = "SHARES_WITH"
     INFORMED_BY = "INFORMED_BY"
     CREATED = "CREATED"
+    SUPERSEDES = "SUPERSEDES"
+    RECORDED_EPISODE = "RECORDED_EPISODE"
+    HANDED_OFF_TO = "HANDED_OFF_TO"
+    HAS_TURN = "HAS_TURN"
+    NEXT_TURN = "NEXT_TURN"
+    MENTIONS = "MENTIONS"
 
 
 INDEX_STATEMENTS = [
@@ -40,4 +47,5 @@ INDEX_STATEMENTS = [
     "CREATE INDEX FOR (c:Claim) ON (c.id)",
     "CREATE INDEX FOR (c:Claim) ON (c.project_id)",
     "CREATE INDEX FOR (s:Source) ON (s.id)",
+    "CREATE INDEX FOR (t:Turn) ON (t.id)",
 ]

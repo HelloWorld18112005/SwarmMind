@@ -6,6 +6,8 @@ import {
   ShieldAlert,
   TrendingUp,
   Sparkles,
+  Award,
+  GitBranch,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Report, Run } from '../../types';
@@ -261,13 +263,46 @@ export const ReportView: React.FC<ReportViewProps> = ({ projectId, activeRunId }
                     className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-3"
                   >
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
                         <span className="text-xs font-semibold text-white">{rec.title}</span>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                          {rec.priority}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {rec.pagerank_score !== undefined && rec.pagerank_score !== null && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/30"
+                              title="Native FalkorDB PageRank algorithm authority score"
+                            >
+                              <Award className="w-3 h-3 text-indigo-400" />
+                              PR: {rec.pagerank_score.toFixed(3)}
+                            </span>
+                          )}
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                            {rec.priority}
+                          </span>
+                        </div>
                       </div>
                       <p className="text-xs text-slate-300 leading-relaxed">{rec.description}</p>
+
+                      {/* Native Shortest-Path Provenance Chain (algo.SPpaths) */}
+                      {rec.provenance_chain && rec.provenance_chain.length > 0 && (
+                        <div className="pt-2 border-t border-slate-900/80 space-y-1">
+                          <div className="flex items-center gap-1 text-[10px] font-mono text-emerald-400">
+                            <GitBranch className="w-3 h-3" />
+                            <span>Shortest-Path Provenance (algo.SPpaths):</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono">
+                            {rec.provenance_chain.map((hop, hIdx) => (
+                              <React.Fragment key={hIdx}>
+                                <span className="px-1.5 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800">
+                                  {hop}
+                                </span>
+                                {hIdx < rec.provenance_chain!.length - 1 && (
+                                  <span className="text-emerald-400 font-bold">→</span>
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="pt-2 border-t border-slate-900 flex items-center justify-between">

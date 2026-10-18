@@ -37,10 +37,27 @@ class BaseAgent(ABC, Generic[T]):
         run_id: str,
         task_context: dict[str, Any],
     ) -> T:
-        """Execute the agent task and return validated structured output."""
-        self.step_count += 1
+        # Dynamically inject learned procedural rules (confidence >= 0.55) and past episodic warnings
+        effective_prompt = self.system_prompt
+        try:
+            procedural_rules = await self.memory_service.get_procedural_rules(project_id, min_confidence=0.55, limit=5)
+            if procedural_rules:
+                rules_block = "\n\n### Active Operational Heuristics (Learned from prior runs):\n"
+                for rule in procedural_rules:
+                    rules_block += f"- {rule.instruction or rule.content} (confidence: {rule.confidence:.2f})\n"
+                effective_prompt += rules_block
+
+            past_episodes = await self.memory_service.get_past_episodes(project_id, limit=3)
+            if past_episodes:
+                episodes_block = "\n\n### Past Episodic Lessons & Challenges in Workspace:\n"
+                for ep in past_episodes:
+                    episodes_block += f"- Prior run [{ep.get('run_id')}]: {ep.get('outcome', 'challenged')} - {ep.get('content', 'Conflict detected')}\n"
+                effective_prompt += episodes_block
+        except Exception as err:
+            logger.debug(f"Procedural memory retrieval note: {err}")
+
         messages = [
-            ChatMessage(role="system", content=self.system_prompt),
+            ChatMessage(role="system", content=effective_prompt),
             ChatMessage(
                 role="user",
                 content=f"Project ID: {project_id}\nRun ID: {run_id}\nTask Context:\n{json.dumps(task_context, indent=2)}",

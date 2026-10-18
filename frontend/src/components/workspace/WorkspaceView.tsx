@@ -8,11 +8,14 @@ import {
   ArrowRight,
   Sparkles,
   ShieldCheck,
-  Coins,
-  Gauge,
+  MessageSquare,
+  Send,
+  ThumbsUp,
+  AlertTriangle,
+  Link2,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { Project, Run, RunBudget, Task } from '../../types';
+import { Project, Run, Task, Turn } from '../../types';
 
 interface WorkspaceViewProps {
   project: Project;
@@ -28,11 +31,19 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   const [runs, setRuns] = useState<Run[]>([]);
   const [activeRun, setActiveRun] = useState<Run | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [budget, setBudget] = useState<RunBudget | null>(null);
-  const [goal, setGoal] = useState('Evaluate strategic feasibility, TAM divergence, unit economics, and latency for AI Socratic Math Tutoring.');
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState<string | null>(null);
+  const [goal, setGoal] = useState(
+    project.id === 'proj-apexai-audit'
+      ? 'Audit ApexAI acquisition claims, verify proprietary IP against Git SBOM, and formulate escrow terms.'
+      : 'Evaluate strategic feasibility, TAM divergence, unit economics, and latency for autonomous deployment.'
+  );
   const [isLaunching, setIsLaunching] = useState(false);
   const [events, setEvents] = useState<any[]>([]);
   const eventLogRef = useRef<HTMLDivElement>(null);
+  const chatLogRef = useRef<HTMLDivElement>(null);
 
   const fetchRuns = async () => {
     try {
@@ -55,12 +66,12 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
     }
   };
 
-  const fetchBudget = async (runId: string) => {
+  const fetchTurns = async (runId: string) => {
     try {
-      const b = await api.getRunBudget(runId);
-      setBudget(b);
+      const turnList = await api.listChatTurns(runId);
+      setTurns(turnList);
     } catch (err) {
-      console.warn('Could not fetch budget:', err);
+      console.warn('Could not fetch turns:', err);
     }
   };
 
@@ -71,9 +82,44 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   useEffect(() => {
     if (activeRun) {
       fetchTasks(activeRun.id);
-      fetchBudget(activeRun.id);
+      fetchTurns(activeRun.id);
     }
   }, [activeRun]);
+
+  useEffect(() => {
+    if (chatLogRef.current) {
+      chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
+    }
+  }, [turns]);
+
+  const handleSendChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !activeRun || isSendingChat) return;
+
+    const userMsg = chatInput.trim();
+    setChatInput('');
+    setIsSendingChat(true);
+
+    try {
+      const res = await api.sendChatMessage(activeRun.id, userMsg);
+      setTurns((prev) => [...prev, res.user_turn, ...(res.assistant_turn ? [res.assistant_turn] : [])]);
+    } catch (err: any) {
+      alert(`Chat error: ${err.message}`);
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
+
+  const handleFeedback = async (action: 'approve' | 'challenge') => {
+    if (!activeRun) return;
+    try {
+      const res = await api.submitRunFeedback(activeRun.id, action);
+      setFeedbackStatus(res.message);
+      setTimeout(() => setFeedbackStatus(null), 5000);
+    } catch (err: any) {
+      alert(`Feedback error: ${err.message}`);
+    }
+  };
 
   // Subscribe to live SSE events when active run is running
   useEffect(() => {
@@ -83,12 +129,10 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       setEvents((prev) => [...prev, event]);
       if (event.event_type === 'task_completed' || event.event_type === 'task_started') {
         fetchTasks(activeRun.id);
-        fetchBudget(activeRun.id);
       }
       if (event.event_type === 'run_completed') {
         setActiveRun((prev) => (prev ? { ...prev, status: 'completed' } : null));
         fetchRuns();
-        fetchBudget(activeRun.id);
       }
     });
 
@@ -115,7 +159,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       setActiveRun(newRun);
       setRuns([newRun, ...runs]);
       await fetchTasks(newRun.id);
-      await fetchBudget(newRun.id);
     } catch (err: any) {
       alert(`Launch error: ${err.message}`);
     } finally {
@@ -213,34 +256,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               </button>
             </div>
           </div>
-
-          {/* Budget & Resource Metrics */}
-          {budget && (
-            <div className="pt-2.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono text-slate-400">
-              <div className="flex items-center space-x-4">
-                <span className="flex items-center gap-1.5">
-                  <Gauge className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Tokens: </span>
-                  <strong className="text-slate-200">{budget.total_tokens.toLocaleString()}</strong>
-                </span>
-
-                <span className="flex items-center gap-1.5">
-                  <Coins className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Cost: </span>
-                  <strong className="text-emerald-400">${budget.estimated_cost_usd.toFixed(4)}</strong>
-                  <span className="text-slate-500">/ ${budget.max_budget_usd.toFixed(2)} limit</span>
-                </span>
-
-                <span>
-                  Steps: <strong className="text-slate-200">{budget.step_count}</strong> / {budget.max_steps}
-                </span>
-              </div>
-
-              <span className="text-slate-500">
-                Elapsed: <strong className="text-slate-300">{budget.elapsed_seconds}s</strong>
-              </span>
-            </div>
-          )}
         </div>
       )}
 
@@ -353,6 +368,140 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Workspace Deliberation Chat & Graph Conversation Chain */}
+      {activeRun && (
+        <div className="p-5 rounded-2xl border border-indigo-500/20 bg-slate-900/60 backdrop-blur space-y-4 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div>
+              <div className="flex items-center space-x-2">
+                <MessageSquare className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-200">
+                  Workspace Deliberation Chat & Graph Conversation Chain
+                </h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
+                  (:Run)-[:HAS_TURN]-&gt;(:Turn)
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Multi-turn conversation history persisted as graph nodes linked with <code className="text-indigo-300">NEXT_TURN</code> and <code className="text-indigo-300">MENTIONS</code> edges.
+              </p>
+            </div>
+
+            {/* Human Reinforcement Feedback Buttons */}
+            <div className="flex items-center space-x-2">
+              <span className="text-[11px] text-slate-400 font-mono mr-1">Procedural Rules:</span>
+              <button
+                onClick={() => handleFeedback('approve')}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-medium transition"
+                title="Approve investigation findings: reinforce active procedural rules (+0.08 confidence)"
+              >
+                <ThumbsUp className="w-3.5 h-3.5" />
+                <span>Approve (+0.08)</span>
+              </button>
+              <button
+                onClick={() => handleFeedback('challenge')}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-medium transition"
+                title="Challenge contradiction: penalize active procedural rules (-0.15 confidence)"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Challenge (-0.15)</span>
+              </button>
+            </div>
+          </div>
+
+          {feedbackStatus && (
+            <div className="p-2.5 rounded-xl bg-indigo-950/80 border border-indigo-500/40 text-xs text-indigo-200 flex items-center justify-between">
+              <span>{feedbackStatus}</span>
+              <button onClick={() => setFeedbackStatus(null)} className="text-slate-400 hover:text-white text-xs">✕</button>
+            </div>
+          )}
+
+          {/* Chat Turn History */}
+          <div
+            ref={chatLogRef}
+            className="h-72 overflow-y-auto space-y-3 pr-2"
+          >
+            {turns.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-500 italic">
+                No conversation turns recorded for this run yet. Ask a question below to probe the graph!
+              </div>
+            ) : (
+              turns.map((t) => (
+                <div
+                  key={t.id}
+                  className={`p-3.5 rounded-xl border text-xs space-y-2 ${
+                    t.role === 'user'
+                      ? 'bg-slate-950 border-slate-800 ml-8'
+                      : 'bg-indigo-950/30 border-indigo-500/30 mr-8'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold ${
+                        t.role === 'user'
+                          ? 'bg-slate-800 text-slate-300'
+                          : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+                      }`}>
+                        {t.role}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-500">{t.id}</span>
+                      {t.prev_turn_id && (
+                        <span className="text-[10px] font-mono text-slate-600">
+                          ← {t.prev_turn_id}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {new Date(t.created_at).toLocaleTimeString()}
+                    </span>
+                  </div>
+
+                  <p className="text-slate-200 leading-relaxed whitespace-pre-wrap">{t.content}</p>
+
+                  {/* Mentioned Claims */}
+                  {t.mentioned_claim_ids && t.mentioned_claim_ids.length > 0 && (
+                    <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-1.5 text-[10px]">
+                      <span className="text-slate-400 font-mono flex items-center gap-1">
+                        <Link2 className="w-3 h-3 text-indigo-400" />
+                        Mentioned Claims:
+                      </span>
+                      {t.mentioned_claim_ids.map((cid) => (
+                        <span
+                          key={cid}
+                          className="px-2 py-0.5 rounded bg-indigo-900/50 text-indigo-200 border border-indigo-700/60 font-mono"
+                        >
+                          {cid}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Follow-up Chat Input */}
+          <form onSubmit={handleSendChat} className="flex gap-2">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Ask a follow-up question, probe evidence, or verify claims..."
+              disabled={isSendingChat}
+              className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:border-indigo-500 outline-none font-sans"
+            />
+            <button
+              type="submit"
+              disabled={isSendingChat || !chatInput.trim()}
+              className="inline-flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition shadow-lg shadow-indigo-600/30 disabled:opacity-50 shrink-0"
+            >
+              <Send className={`w-3.5 h-3.5 ${isSendingChat ? 'animate-spin' : ''}`} />
+              <span>{isSendingChat ? 'Sending...' : 'Send'}</span>
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

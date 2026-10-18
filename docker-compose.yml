@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: swarmmind-falkordb
+    ports:
+      - "6379:6379"   # FalkorDB / Redis-compatible API
+      - "3000:3000"   # FalkorDB Browser UI
+    volumes:
+      - falkordb_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: swarmmind-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=development
+      - GRAPH_BACKEND=falkordb
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - FALKORDB_SSL=false
+      - FALKORDB_GRAPH=swarmmind
+      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - FRONTEND_ORIGIN=http://localhost:5173
+      - MAX_CONCURRENT_AGENTS=3
+      - MAX_AGENT_STEPS=20
+      - MAX_RUN_DURATION_SECONDS=600
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: swarmmind-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  falkordb_data:
+    driver: local

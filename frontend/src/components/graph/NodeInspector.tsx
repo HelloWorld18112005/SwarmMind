@@ -25,10 +25,19 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
   allNodes,
   onClose,
   onSelectNode,
-  runId = 'run-ai-tutoring-eval',
+  runId: runIdProp,
 }) => {
   const [showExplainModal, setShowExplainModal] = useState(false);
   if (!node) return null;
+
+  // Dynamically resolve the actual runId from the node properties, graph topology, or props
+  const effectiveRunId =
+    (node.properties?.run_id as string) ||
+    (node.label === 'Run' ? node.id : undefined) ||
+    runIdProp ||
+    allNodes.find((n) => n.label === 'Run')?.id ||
+    (allNodes.find((n) => n.properties?.run_id)?.properties?.run_id as string) ||
+    '';
 
   const outgoingEdges = edges.filter((e) => e.source === node.id);
   const incomingEdges = edges.filter((e) => e.target === node.id);
@@ -58,9 +67,9 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
 
   return (
     <>
-      {showExplainModal && (
+      {showExplainModal && effectiveRunId && (
         <ProvenancePathModal
-          runId={runId}
+          runId={effectiveRunId}
           nodeId={node.id}
           recommendationTitle={String(node.title || node.id)}
           onClose={() => setShowExplainModal(false)}

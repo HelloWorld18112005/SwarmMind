@@ -16,7 +16,7 @@ def create_llm_provider(settings: Settings | None = None) -> LLMProvider:
         return MockProvider(model_name=cfg.llm_model or "mock-model")
 
     if provider_type == "gemini":
-        return GeminiProvider(api_key=cfg.llm_api_key, model=cfg.llm_model or "gemini-1.5-flash")
+        return GeminiProvider(api_key=cfg.llm_api_key, model=cfg.llm_model or "gemini-2.5-flash")
 
     if provider_type == "openai":
         return OpenAIProvider(api_key=cfg.llm_api_key, model=cfg.llm_model or "gpt-4o-mini")

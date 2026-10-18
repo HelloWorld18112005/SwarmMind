@@ -97,41 +97,45 @@ export const CustomNode = memo(({ data }: { data: CustomNodeData }) => {
 
   return (
     <div
-      className={`px-3 py-2.5 rounded-xl border ${style.border} ${style.bg} shadow-lg backdrop-blur min-w-[200px] max-w-[280px] text-xs transition-all hover:scale-105 hover:shadow-indigo-500/10 cursor-pointer`}
+      className={`px-3.5 py-3 rounded-xl border ${style.border} ${style.bg} shadow-xl backdrop-blur w-[260px] text-xs transition-all hover:scale-105 hover:shadow-indigo-500/20 cursor-pointer select-none`}
     >
-      <Handle type="target" position={Position.Top} className="!w-2 !h-2 !bg-indigo-400 !border-slate-900" />
+      {/* Target Handles (Left for horizontal DAG, Top for cross-layer) */}
+      <Handle type="target" position={Position.Left} className="!w-2.5 !h-2.5 !bg-indigo-400 !border-slate-900" />
+      <Handle type="target" id="t-top" position={Position.Top} className="!w-2 !h-2 !bg-indigo-400 !border-slate-900 opacity-30" />
 
       <div className="flex items-center justify-between gap-1 mb-1.5">
         <div className="flex items-center gap-1.5">
           {style.icon}
-          <span className={`font-semibold uppercase tracking-wider text-[10px] ${style.text}`}>
+          <span className={`font-bold uppercase tracking-wider text-[10px] ${style.text}`}>
             {label}
           </span>
         </div>
         {hasContradiction && (
-          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40">
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/50 animate-pulse">
             DISPUTED
           </span>
         )}
         {confidence !== null && !hasContradiction && (
-          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-slate-800 text-slate-300 border border-slate-700">
-            {confidence}%
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-slate-800 text-slate-200 border border-slate-700">
+            {confidence}% conf
           </span>
         )}
       </div>
 
-      <div className="font-medium text-slate-100 line-clamp-2 leading-snug">
+      <div className="font-medium text-slate-100 line-clamp-3 leading-snug text-xs">
         {String(title || properties?.name || properties?.id || 'Untitled Node')}
       </div>
 
       {role && (
-        <div className="mt-1.5 pt-1 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400">
+        <div className="mt-2 pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400">
           <span>Role</span>
-          <span className="font-mono text-indigo-300 uppercase">{String(role)}</span>
+          <span className="font-mono text-indigo-300 font-semibold uppercase">{String(role)}</span>
         </div>
       )}
 
-      <Handle type="source" position={Position.Bottom} className="!w-2 !h-2 !bg-indigo-400 !border-slate-900" />
+      {/* Source Handles (Right for horizontal DAG, Bottom for cross-layer) */}
+      <Handle type="source" position={Position.Right} className="!w-2.5 !h-2.5 !bg-indigo-400 !border-slate-900" />
+      <Handle type="source" id="s-bottom" position={Position.Bottom} className="!w-2 !h-2 !bg-indigo-400 !border-slate-900 opacity-30" />
     </div>
   );
 });

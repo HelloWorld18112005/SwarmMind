@@ -22,15 +22,16 @@ async def test_seed_demo_endpoint():
         data = seed_res.json()
         assert data["status"] == "seeded"
         proj_id = data["project_id"]
+        assert proj_id == "proj-apexai-audit"
 
         # Verify project exists
         p_res = await client.get(f"/api/projects/{proj_id}")
         assert p_res.status_code == 200
-        assert "AI Tutoring" in p_res.json()["name"]
+        assert "ApexAI" in p_res.json()["name"]
 
-        # Verify contradictions endpoint reports the TAM contradiction
+        # Verify contradictions endpoint reports the founder IP/infrastructure contradictions
         conflicts_res = await client.get(f"/api/projects/{proj_id}/graph/conflicts")
         assert conflicts_res.status_code == 200
         conflicts = conflicts_res.json()
         assert len(conflicts) >= 1
-        assert any("claim-tam-bull" in c["claim_a_id"] or "claim-tam-bull" in c["claim_b_id"] for c in conflicts)
+        assert any("claim-founder-prop" in c["claim_a_id"] or "claim-founder-prop" in c["claim_b_id"] for c in conflicts)

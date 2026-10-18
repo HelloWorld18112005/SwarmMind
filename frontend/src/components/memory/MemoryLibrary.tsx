@@ -44,7 +44,13 @@ export const MemoryLibrary: React.FC<MemoryLibraryProps> = ({
     fetchMemories();
   };
 
-  const types = ['all', 'fact', 'observation', 'rule', 'hypothesis', 'summary'];
+  // Cognitive memory types supported in SwarmMind & FalkorDB
+  const coreTypes = ['all', 'procedural', 'semantic', 'episodic', 'rule', 'fact', 'hypothesis', 'observation', 'summary'];
+
+  const getCountForType = (type: string) => {
+    if (type === 'all') return memories.length;
+    return memories.filter((m) => m.memory_type.toLowerCase() === type.toLowerCase()).length;
+  };
 
   const filteredMemories = memories.filter((m) => {
     if (selectedType === 'all') return true;
@@ -53,16 +59,24 @@ export const MemoryLibrary: React.FC<MemoryLibraryProps> = ({
 
   const getTypeBadgeStyle = (type: string) => {
     switch (type.toLowerCase()) {
+      case 'procedural':
+        return 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30';
+      case 'semantic':
+        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+      case 'episodic':
+        return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
       case 'fact':
         return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
       case 'rule':
         return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30';
       case 'summary':
-        return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
+        return 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30';
       case 'observation':
         return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
-      default:
+      case 'hypothesis':
         return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+      default:
+        return 'bg-slate-500/10 text-slate-400 border-slate-500/30';
     }
   };
 
@@ -93,22 +107,37 @@ export const MemoryLibrary: React.FC<MemoryLibraryProps> = ({
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-        {types.map((t) => (
-          <button
-            key={t}
-            onClick={() => setSelectedType(t)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-mono capitalize transition ${
-              selectedType === t
-                ? 'bg-indigo-600 text-white font-medium shadow-md'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-        <span className="text-xs text-slate-500 font-mono ml-auto">
-          {filteredMemories.length} memories
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 pb-3">
+        {coreTypes.map((t) => {
+          const count = getCountForType(t);
+          const isSelected = selectedType === t;
+          return (
+            <button
+              key={t}
+              onClick={() => setSelectedType(t)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-mono capitalize transition flex items-center gap-1.5 ${
+                isSelected
+                  ? 'bg-indigo-600 text-white font-medium shadow-md'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              <span>{t}</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  isSelected
+                    ? 'bg-indigo-800 text-indigo-200'
+                    : count > 0
+                    ? 'bg-slate-800 text-indigo-400 font-semibold'
+                    : 'text-slate-600'
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+        <span className="text-xs text-slate-500 font-mono ml-auto hidden sm:inline">
+          {filteredMemories.length} shown
         </span>
       </div>
 
@@ -119,6 +148,7 @@ export const MemoryLibrary: React.FC<MemoryLibraryProps> = ({
         <div className="p-16 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/30 space-y-2">
           <Brain className="w-8 h-8 text-slate-600 mx-auto" />
           <p className="text-sm text-slate-400">No memories match your query</p>
+          <p className="text-xs text-slate-600">Try selecting another filter or searching for a different keyword.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -148,6 +178,15 @@ export const MemoryLibrary: React.FC<MemoryLibraryProps> = ({
                   <p className="text-xs text-slate-200 leading-relaxed font-sans">
                     {m.content}
                   </p>
+
+                  {m.instruction && (
+                    <div className="p-2.5 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-[11px] font-mono text-indigo-300">
+                      <span className="font-bold uppercase tracking-wider text-[9px] text-indigo-400 block mb-0.5">
+                        Reinforced Policy:
+                      </span>
+                      {m.instruction}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3 pt-3 border-t border-slate-800/80">

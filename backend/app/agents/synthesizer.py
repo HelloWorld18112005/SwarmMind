@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 from pydantic import BaseModel, Field
 
@@ -5,6 +6,8 @@ from app.agents.base import BaseAgent
 from app.llm.base import LLMProvider
 from app.memory.service import MemoryService
 from app.schemas.memory import MemoryCreate
+
+logger = logging.getLogger(__name__)
 
 
 class SynthesizerOutput(BaseModel):
@@ -25,6 +28,25 @@ class SynthesizerAgent(BaseAgent[SynthesizerOutput]):
             system_prompt=prompt,
             output_schema=SynthesizerOutput,
         )
+
+    async def run(
+        self,
+        project_id: str,
+        run_id: str,
+        task_context: dict[str, Any],
+    ) -> SynthesizerOutput:
+        # Query native PageRank centrality to weight anchoring findings for the executive summary
+        try:
+            authority = await self.memory_service.repo.get_claim_authority(project_id, limit=5)
+            if authority:
+                task_context["anchoring_findings_pagerank"] = [
+                    f"Claim: '{a.get('text') or a.get('claim')}' (PageRank Score: {a.get('score', 0):.4f})"
+                    for a in authority
+                ]
+        except Exception as e:
+            logger.debug(f"Synthesizer authority ranking note: {e}")
+
+        return await super().run(project_id, run_id, task_context)
 
     async def on_task_completed(
         self,

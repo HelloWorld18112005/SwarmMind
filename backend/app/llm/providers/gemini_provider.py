@@ -6,16 +6,16 @@ from app.llm.base import ChatMessage, LLMProvider, LLMResponse
 class GeminiProvider(LLMProvider):
     """Google Gemini LLM provider adapter using direct REST API."""
 
-    def __init__(self, api_key: str, model: str = "gemini-1.5-flash") -> None:
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash") -> None:
         self.api_key = api_key
-        self.model = model or "gemini-1.5-flash"
+        self.model = model or "gemini-2.5-flash"
         self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
 
     async def generate(
         self,
         messages: list[ChatMessage],
         temperature: float = 0.2,
-        max_tokens: int = 2000,
+        max_tokens: int = 8192,
         response_json: bool = True,
     ) -> LLMResponse:
         if not self.api_key:

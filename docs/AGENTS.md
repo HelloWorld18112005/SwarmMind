@@ -1,102 +1,64 @@
-# SwarmMind Agent Architecture & Orchestration Specification
+# SwarmMind Agent Swarm Architecture & Prompt Matrix
 
-SwarmMind departs from unstructured agent chat logs by employing a **role-specialized, graph-grounded agent swarm**. Every agent reads from and writes to a shared FalkorDB knowledge graph with strict role boundaries, dependency-aware task scheduling, and structured typed outputs.
+SwarmMind deploys a collaborative team of role-specialized AI agents whose cognition, coordination, and memory are grounded in **FalkorDB**.
 
 ---
 
-## 1. The 6 Specialized Agent Roles
+## 🤖 The Specialized Agent Roles
 
-```mermaid
-flowchart TD
-    Coord["1. Coordinator Agent<br/>(Task Decomposition & DAG Scheduling)"]
-    Res["2. Researcher Agent<br/>(Empirical Evidence Gathering)"]
-    Ana["3. Analyst Agent<br/>(Cross-Entity Inference & Graph Querying)"]
-    Critic["4. Critic Agent<br/>(Contradiction Detection & Source Auditing)"]
-    Plan["5. Planner Agent<br/>(Strategic Action Formulation)"]
-    Synth["6. Synthesizer Agent<br/>(Auditable Final Report Generation)"]
+| Role | Name / Title | Core Responsibility | Primary Graph Read/Write Actions |
+|---|---|---|---|
+| **Coordinator** | `M&A Lead Partner` / `Incident Commander` | Decomposes high-level goals into a directed acyclic task graph (DAG). Monitors task states, dependencies, and handoffs. | Writes `(:Task)` and `[:DEPENDS_ON]` edges. Reads overall project progress via `[:HAS_TASK]`. |
+| **Researcher** | `IP & Forensics Auditor` / `Telemetry Inspector` | Ingests primary sources (pitch decks, Git SBOMs, court filings, Terraform manifests) and extracts empirical claims with confidence scores. | Writes `(:Source)`, `(:Claim)`, and `(Source)-[:SUPPORTS]->(Claim)`. |
+| **Analyst** | `Systems & Valuation Analyst` / `Kernel Analyst` | Evaluates quantitative claims, analyzes architecture telemetry, checks uptime models, and determines valuation impact. | Reads `(:Claim)` nodes. Writes `(:Memory {type: 'insight'})` and `(Claim)-[:ABOUT]->(Project)`. |
+| **Critic** | `Contradiction & Escrow Critic` / `Contradiction Verifier` | Cross-examines all findings for factual contradictions, license contamination, or unverified claims. Executes the procedural reinforcement loop. | Writes `(Claim)-[:CONTRADICTS]->(Claim)`. Adjusts procedural rule confidence: `+0.08` on verify, `-0.15` on dispute. |
+| **Planner** | `Deal Structuring Strategist` / `Database Architect` | Formulates risk mitigation frameworks, escrow withholding covenants, and remediation roadmaps. | Reads active disputes. Writes `(:Memory {type: 'policy'})` and `(:Decision)`. |
+| **Synthesizer** | `Due Diligence Synthesizer` / `Post-Mortem Synthesizer` | Evaluates evidence authority via native FalkorDB PageRank (`algo.pageRank`) to anchor executive summaries in the most heavily evidenced claims. | Calls `CALL algo.pageRank('Claim', 'SUPPORTS')`. Writes final `(:Artifact)` and links episode reflections via `[:RECORDED_EPISODE]`. |
 
-    Coord -->|HAS_TASK| Res
-    Coord -->|HAS_TASK| Ana
-    Res -->|PRODUCED / SUPPORTS| SharedGraph[(Shared FalkorDB Graph)]
-    Ana -->|PRODUCED / DERIVED_FROM| SharedGraph
-    SharedGraph -->|EVALUATES| Critic
-    Critic -->|CONTRADICTS| SharedGraph
-    SharedGraph -->|INFORMS| Plan
-    Plan -->|PRODUCED| SharedGraph
-    SharedGraph -->|SYNTHESIZES| Synth
+---
+
+## 🧠 Cognitive Memory Injection into Agent Prompts
+
+Before every agent reasoning step, SwarmMind queries FalkorDB to condition the agent's context window on:
+1. **Active Procedural Rules**: Heuristics with confidence $\ge 0.55$ derived from prior successful runs.
+2. **Past Episodic Lessons**: Outcomes and challenges flagged in previous workspace runs.
+
+### Cypher Query for Prompt Conditioning:
+```cypher
+MATCH (m:Memory {memory_type: 'procedural'})
+WHERE m.confidence >= $min_confidence AND (m.invalid_at IS NULL OR m.invalid_at = '')
+  AND ($project_id IS NULL OR $project_id = '' OR m.project_id = $project_id)
+RETURN m.id AS id, m.instruction AS instruction, m.confidence AS confidence
+ORDER BY m.confidence DESC LIMIT 5
 ```
 
-### 1. Coordinator Agent (`coordinator`)
-- **System Prompt**: `app/agents/prompts/coordinator.md`
-- **Responsibilities**:
-  - Breaks user goals into a Directed Acyclic Graph (DAG) of actionable subtasks.
-  - Determines prerequisite dependencies (e.g., Critic cannot run until Researcher & Analyst complete).
-  - Enforces execution step budgets (`MAX_AGENT_STEPS = 20`) and concurrency limits (`MAX_CONCURRENT_AGENTS = 3`).
-- **Boundaries**: Cannot fabricate research findings or perform analysis directly.
-
-### 2. Researcher Agent (`researcher`)
-- **System Prompt**: `app/agents/prompts/researcher.md`
-- **Responsibilities**:
-  - Gathers empirical facts and statistical data from authorized external sources and datasets.
-  - Registers `Source` nodes (`id`, `title`, `uri`, `source_type`) and `Claim` nodes.
-  - Links claims to sources via `SUPPORTS` relationships.
-- **Boundaries**: Cannot mark its own claims as independently verified; cannot query internal inference conclusions.
-
-### 3. Analyst Agent (`analyst`)
-- **System Prompt**: `app/agents/prompts/analyst.md`
-- **Responsibilities**:
-  - Traverses the shared knowledge graph for related findings.
-  - Connects disparate evidence (e.g. inference unit costs vs pricing tiers) into synthesized interpretations.
-  - Creates `Memory` nodes with `memory_type: 'insight'` and records `DERIVED_FROM` relationships.
-- **Boundaries**: Must cite supporting memories; cannot invent unsourced assumptions.
-
-### 4. Critic Agent (`critic`)
-- **System Prompt**: `app/agents/prompts/critic.md`
-- **Responsibilities**:
-  - Audits claims against their underlying sources for logical leaps, ungrounded figures, or discrepancies.
-  - Compares new claims against existing graph memory using Jaccard text overlap and numerical range comparison.
-  - Flags conflicting claims by writing explicit `CONTRADICTS` relationships in FalkorDB with dispute notes and mitigation recommendations.
-- **Boundaries**: **Never silently overwrites or deletes conflicting data**. Preserves disputes for human and synthesizer review.
-
-### 5. Planner Agent (`planner`)
-- **System Prompt**: `app/agents/prompts/planner.md`
-- **Responsibilities**:
-  - Formulates prioritized recommendations, milestones, and mitigation contingencies based on verified graph facts.
-  - Links recommendations to supporting claims via `INFORMED_BY`.
-- **Boundaries**: Explicitly flags assumptions and dependencies on disputed claims.
-
-### 6. Synthesizer Agent (`synthesizer`)
-- **System Prompt**: `app/agents/prompts/synthesizer.md`
-- **Responsibilities**:
-  - Aggregates the entire project knowledge graph into a cohesive, executive-ready report.
-  - Surfaces primary source citations, unresolved disputes, confidence assessments, and operational risks.
-- **Boundaries**: Must not invent citations or claim an investigation succeeded if tasks failed.
-
----
-
-## 2. Tool Permissions Matrix
-
-| Agent | Memory Search | Evidence Creation | Claim Creation | Contradiction Flagging | Task Management |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Coordinator** | Read | No | No | No | Full (Schedule/Assign) |
-| **Researcher** | Read | Full (Create Source) | Full (Create Claim) | No | Self-update |
-| **Analyst** | Full (Traverse) | Read | Full (Inferences) | No | Self-update |
-| **Critic** | Full (Traverse) | Read | Read | Full (`CONTRADICTS`) | Self-update |
-| **Planner** | Full (Traverse) | Read | Read | Read | Self-update |
-| **Synthesizer**| Full (Traverse) | Read | Read | Read | Self-update |
-
----
-
-## 3. Task State Machine & Resiliency
-
-Each task in the DAG moves through deterministic states:
+### Injected Prompt Structure:
 ```text
-[PENDING] ---> [SCHEDULED] ---> [RUNNING] ---> [COMPLETED]
-                   |                |
-                   v                v
-              [CANCELLED]       [FAILED] ---> (Retry with Exponential Backoff)
+[System Prompt for Role]
+
+### Active Operational Heuristics (Learned from prior runs):
+- Cross-reference all founder proprietary IP assertions against the Git SBOM for GPL/AGPL copyleft triggers before approving valuation. (confidence: 0.68)
+- Verify multi-region uptime claims against raw cloud infrastructure configurations rather than marketing materials. (confidence: 0.60)
+
+### Past Episodic Lessons & Challenges in Workspace:
+- Prior run [run-apexai-audit-eval]: challenged - Detected material founder misrepresentation on proprietary IP and infrastructure reliability; triggered escrow withholding protocol.
 ```
 
-- **Dependency Checking**: A task transitions to `SCHEDULED` only when all prerequisites in `task.dependencies` report `COMPLETED`.
-- **Retry Policy**: Failed tasks are retried up to 3 times with exponential backoff (1s, 2s, 4s).
-- **Graceful Cancellation**: Active runs can be cancelled at any time via `POST /api/runs/{id}/cancel`.
+---
+
+## 🔄 Dynamic Procedural Reinforcement Loop
+
+SwarmMind agents don't follow static instructions; their heuristics evolve based on empirical validation:
+- When the **Critic** verifies a claim supported by a procedural rule, it executes:
+  ```cypher
+  MATCH (m:Memory {memory_type: 'procedural', project_id: $project_id})
+  SET m.confidence = CASE WHEN m.confidence + 0.08 > 1.0 THEN 1.0 ELSE m.confidence + 0.08 END,
+      m.successes = coalesce(m.successes, 0) + 1
+  ```
+- When the **Critic** discovers a factual contradiction or invalid claim, it penalizes the governing rule:
+  ```cypher
+  MATCH (m:Memory {memory_type: 'procedural', project_id: $project_id})
+  SET m.confidence = CASE WHEN m.confidence - 0.15 < 0.0 THEN 0.0 ELSE m.confidence - 0.15 END,
+      m.failures = coalesce(m.failures, 0) + 1
+  ```
+- Rules that fall below $0.55$ confidence are automatically evicted from future prompt injection.

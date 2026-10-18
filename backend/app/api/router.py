@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import health, projects, runs, memories, graph, demo, events, reports, explain, budgets
+from app.api.routes import health, projects, runs, memories, graph, demo, events, reports, explain, chat, budgets
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -11,4 +11,6 @@ api_router.include_router(demo.router)
 api_router.include_router(events.router)
 api_router.include_router(reports.router)
 api_router.include_router(explain.router)
+api_router.include_router(chat.router)
 api_router.include_router(budgets.router)
+

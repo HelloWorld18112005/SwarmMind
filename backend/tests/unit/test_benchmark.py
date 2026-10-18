@@ -14,10 +14,11 @@ def async_test(coro):
 async def test_evaluation_benchmark_suite():
     repo = LocalGraphAdapter()
     await repo.initialize()
-    await seed_demo_project(repo)
+    seed_res = await seed_demo_project(repo)
+    proj_id = seed_res["project_id"]
 
     benchmark = EvaluationBenchmark(repo)
-    report = await benchmark.evaluate_project("proj-ai-tutoring")
+    report = await benchmark.evaluate_project(proj_id)
 
     assert report is not None
     assert report.total_claims >= 4

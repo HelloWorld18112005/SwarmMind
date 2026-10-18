@@ -50,3 +50,13 @@ class CoordinatorAgent(BaseAgent[CoordinatorOutput]):
                 status="pending",
             )
             await self.memory_service.repo.create_task(task)
+
+            # Write explicit graph handoff edges between dependent tasks
+            for dep_id in t_spec.dependencies:
+                await self.memory_service.repo.record_task_handoff(
+                    from_task_id=dep_id,
+                    to_task_id=t_spec.task_id,
+                    from_agent="coordinator",
+                    to_agent=t_spec.assigned_role,
+                    context=output.summary,
+                )

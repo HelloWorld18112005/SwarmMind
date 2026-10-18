@@ -39,20 +39,29 @@ class CriticAgent(BaseAgent[CriticOutput]):
         task_context: dict[str, Any],
     ) -> None:
         # Record detected contradictions into graph
-        for c in output.contradictions:
-            # Save temporary claim representations if needed, or find existing
-            claim_a = await self.memory_service.create_claim(
-                project_id=project_id,
-                payload=ClaimCreate(text=c.claim_a, confidence=0.85, agent_id=self.agent_id, agent_role=self.role),
-                run_id=run_id,
-            )
-            claim_b = await self.memory_service.create_claim(
-                project_id=project_id,
-                payload=ClaimCreate(text=c.claim_b, confidence=0.82, agent_id=self.agent_id, agent_role=self.role),
-                run_id=run_id,
-            )
-            await self.memory_service.record_contradiction(
-                claim_a_id=claim_a.id,
-                claim_b_id=claim_b.id,
-                notes=f"{c.dispute_reason} | Recommendation: {c.recommendation}",
-            )
+        if output.contradictions:
+            for c in output.contradictions:
+                # Save temporary claim representations if needed, or find existing
+                claim_a = await self.memory_service.create_claim(
+                    project_id=project_id,
+                    payload=ClaimCreate(text=c.claim_a, confidence=0.85, agent_id=self.agent_id, agent_role=self.role),
+                    run_id=run_id,
+                )
+                claim_b = await self.memory_service.create_claim(
+                    project_id=project_id,
+                    payload=ClaimCreate(text=c.claim_b, confidence=0.82, agent_id=self.agent_id, agent_role=self.role),
+                    run_id=run_id,
+                )
+                await self.memory_service.record_contradiction(
+                    claim_a_id=claim_a.id,
+                    claim_b_id=claim_b.id,
+                    notes=f"{c.dispute_reason} | Recommendation: {c.recommendation}",
+                )
+                # Record episodic challenge linked to the contested claim
+                await self.memory_service.record_episode(run_id, claim_a.id, "challenged")
+
+            # Flaw detected: penalize weak procedural rules by -0.15 (dropping below 0.55 stops injection)
+            await self.memory_service.penalize_procedural_rules(project_id, delta=0.15)
+        elif output.verified_claims:
+            # Claims verified without dispute: boost applied procedural rules by +0.08
+            await self.memory_service.boost_procedural_rules(project_id, delta=0.08)
